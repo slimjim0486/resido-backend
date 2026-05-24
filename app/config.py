@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     )
 
     # ─── App ───
-    APP_NAME: str = "Survival Dubai"
+    APP_NAME: str = "Resido"
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
     LOG_LEVEL: str = "INFO"
@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     # ─── Database ───
     # Accepts a raw Railway URL (postgresql://...) or a driver-qualified one; the
     # async (+asyncpg) and sync (+psycopg) forms are derived in the properties below.
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/survival_dubai"
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/resido"
     SYNC_DATABASE_URL: str = ""  # optional override; derived from DATABASE_URL when blank
 
     # ─── Redis ───

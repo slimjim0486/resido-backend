@@ -1,4 +1,4 @@
-# Vemix — Backend
+# Resido — Backend
 
 *(working name)* Backend for an **AI co-pilot for living in Dubai**: ask anything across
 bureaucracy + lifestyle and get current, **cited**, actionable answers; an AI agent manages

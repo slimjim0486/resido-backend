@@ -1,4 +1,4 @@
-"""Survival Dubai FastAPI application entrypoint."""
+"""Resido FastAPI application entrypoint."""
 
 from contextlib import asynccontextmanager
 

@@ -1,1 +1,1 @@
-"""Survival Dubai backend application package."""
+"""Resido backend application package."""
