@@ -158,10 +158,15 @@ async def ingest_cell(
     raw = await _scrape_cell(category, area, per_cell=per_cell)
     rows = normalize_cell(raw, category=category.key, area=area, source="google_maps")
     inserted = await providers_service.upsert_providers(session, rows)
+    # Reconcile this cell: providers not seen for ~2 monthly cycles get soft-hidden.
+    # On a first scrape this is a no-op (survivors were just refreshed).
+    retired = await providers_service.retire_stale(
+        session, category.key, area, grace_days=settings.SERVICES_STALE_GRACE_DAYS
+    )
     logger.info(
         "providers_cell",
         category=category.key, area=area, source=source,
-        fetched=len(raw), kept=len(rows), inserted=inserted,
+        fetched=len(raw), kept=len(rows), inserted=inserted, retired=retired,
     )
     return inserted
 

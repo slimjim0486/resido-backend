@@ -61,6 +61,10 @@ class ServiceProvider(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Bayesian trust score (computed on upsert); the default sort key.
     score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     is_sponsored: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Retirement flag: a provider is soft-hidden (not deleted) once it's missed
+    # ~2 monthly scrapes of its cell (see services refresh sweep). Reappearing in
+    # a later scrape flips it back to True. Reads filter on it.
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     source: Mapped[str] = mapped_column(String(120), default="google_maps", nullable=False)
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

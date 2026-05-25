@@ -119,6 +119,18 @@ served via GET /api/v1/services?category=&area=  ·  ranked score desc (google_r
   aged past `SERVICES_TTL_DAYS` (30) — cell freshness is read straight off `max(fetched_at)` per
   `(category, area)` (`providers.cell_freshness`), so there's no separate bookkeeping table. Wired to a
   **monthly** Railway cron (`railway.refresh-services.json`, `0 3 1 * *`). Seed/refresh both reuse `APIFY_TOKEN`.
+  The detail-page scrape (opening hours) is the costliest toggle and is gated by `SERVICES_SCRAPE_DETAILS`
+  (default on) so re-seeds can run fast/cheap without it.
+- **Retiring stale listings (mark-and-sweep).** `fetched_at` *is* "last seen in a scrape" (the upsert only
+  bumps it when a provider appears). After a cell is scraped, `providers.retire_stale` **soft-hides**
+  (`is_active=False`, never deletes) any provider in *that cell* whose `fetched_at` is older than
+  `SERVICES_STALE_GRACE_DAYS` (60 ≈ 2 missed monthly scrapes). This is fair both ways: one missed scrape is
+  free (protects a business that briefly dropped below the rank cap or had a bad Google day), but a sustained
+  ~2-month absence retires it; users stop seeing dead listings within ~2 months. The sweep is **scoped to
+  cells actually scraped**, so a paused cron can never blank the directory. Reappearing in a later scrape
+  flips `is_active` back to `True` (revival keeps the row id + lead attribution). `GET /services` filters on
+  `is_active`; the row's `fetched_at` is exposed so the app can show an "Updated <month>" freshness cue
+  (signal freshness, don't chase it — cost-lever #4). *(Migration `0005_service_provider_is_active`.)*
 - **Ranking — Bayesian trust score.** `score = (v/(v+m))·R + (m/(v+m))·C` (m=20, C=4.2), computed on upsert,
   so a 5.0-from-6-reviews can't outrank a 4.6-from-800. Default sort is `score` desc; `google_rank` (scrape
   order) is the tiebreaker. `rating` + `reviews_count` are surfaced as the trust signal.

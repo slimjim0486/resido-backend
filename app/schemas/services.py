@@ -26,3 +26,6 @@ class ServiceProviderOut(ORMBaseModel):
     score: float
     is_sponsored: bool
     source: str
+    # When this row was last seen in a scrape — drives the "Updated <month>"
+    # freshness signal in the app (turns age into a trust cue, per INGESTION.md).
+    fetched_at: datetime

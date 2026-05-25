@@ -5,9 +5,9 @@ The Services vertical is Resido's monetization surface. Providers are ranked by 
 with the Google Maps scrape order kept as a tiebreaker.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.service import ServiceProvider
@@ -49,7 +49,7 @@ async def list_providers(
 ) -> list[ServiceProvider]:
     """Providers filtered by category/area, best-trust first (score desc), with the
     Google Maps scrape order as a tiebreaker."""
-    stmt = select(ServiceProvider)
+    stmt = select(ServiceProvider).where(ServiceProvider.is_active.is_(True))
     if category:
         stmt = stmt.where(ServiceProvider.category == category)
     if area:
@@ -81,6 +81,8 @@ async def upsert_provider(session: AsyncSession, data: dict) -> bool:
             setattr(provider, field, value)
     provider.score = bayesian_score(data.get("rating"), data.get("reviews_count"))
     provider.fetched_at = datetime.now(timezone.utc)
+    # Appearing in a scrape revives a previously-retired provider.
+    provider.is_active = True
     return inserted
 
 
@@ -92,6 +94,28 @@ async def upsert_providers(session: AsyncSession, items: list[dict]) -> int:
             inserted += 1
     await session.commit()
     return inserted
+
+
+async def retire_stale(
+    session: AsyncSession, category: str, area: str, *, grace_days: int
+) -> int:
+    """Soft-hide providers in a *just-scraped* cell that haven't been seen in a
+    scrape for ``grace_days`` (≈ 2 monthly cycles). Run right after the cell's
+    upsert: survivors have a fresh ``fetched_at`` and are safe; rows missing long
+    enough flip to ``is_active = False`` (kept for revival + lead attribution, not
+    deleted). Returns the number retired. Commits."""
+    threshold = datetime.now(timezone.utc) - timedelta(days=grace_days)
+    stmt = (
+        update(ServiceProvider)
+        .where(ServiceProvider.category == category)
+        .where(ServiceProvider.area == area)
+        .where(ServiceProvider.is_active.is_(True))
+        .where(ServiceProvider.fetched_at < threshold)
+        .values(is_active=False)
+    )
+    result = await session.execute(stmt)
+    await session.commit()
+    return result.rowcount or 0
 
 
 async def cell_freshness(session: AsyncSession) -> dict[tuple[str, str], datetime]:
