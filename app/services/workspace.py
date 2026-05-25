@@ -3,17 +3,21 @@ deadline / lead mutations. Shared by the REST API *and* the AI agent's tools so
 both paths behave identically.
 """
 
-from datetime import date
+from datetime import date, datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.checklist import ChecklistItem
 from app.models.deadline import Deadline
 from app.models.document import Document
+from app.models.event import Event
+from app.models.favorite import Favorite
 from app.models.lead import Lead
 from app.models.profile import Profile
+from app.models.service import ServiceProvider
 from app.services import renewals
 
 
@@ -223,3 +227,93 @@ async def create_lead(
     await session.commit()
     await session.refresh(lead)
     return lead
+
+
+# ─── Favorites / saved items ─────────────────────────────────────────────────
+# A favorite is a polymorphic reference {item_type, item_id} — never a snapshot.
+# Reads resolve to the *live* event/provider row and silently drop anything that
+# no longer exists (an expired event you can't attend shouldn't linger).
+
+EVENT = "event"
+SERVICE = "service"
+
+
+async def list_favorite_ids(session: AsyncSession, user_id: UUID) -> dict[str, list[UUID]]:
+    """The bare ids the user has saved, bucketed by type — cheap heart hydration."""
+    result = await session.execute(
+        select(Favorite.item_type, Favorite.item_id)
+        .where(Favorite.user_id == user_id)
+        .order_by(Favorite.created_at.desc())
+    )
+    buckets: dict[str, list[UUID]] = {EVENT: [], SERVICE: []}
+    for item_type, item_id in result.all():
+        buckets.setdefault(item_type, []).append(item_id)
+    return buckets
+
+
+async def list_favorites(
+    session: AsyncSession, user_id: UUID
+) -> tuple[list[Event], list[ServiceProvider]]:
+    """Saved items resolved to live rows, newest-saved first.
+
+    Events are filtered by the same liveness rule as the public feed (published &
+    not expired); services by `is_active`. Unresolvable saves are omitted.
+    """
+    ids = await list_favorite_ids(session, user_id)
+    event_ids, service_ids = ids[EVENT], ids[SERVICE]
+
+    events: list[Event] = []
+    if event_ids:
+        now = datetime.now(timezone.utc)
+        rows = await session.execute(
+            select(Event)
+            .where(Event.id.in_(event_ids))
+            .where(Event.is_published.is_(True))
+            .where(or_(Event.expires_at.is_(None), Event.expires_at >= now))
+        )
+        by_id = {e.id: e for e in rows.scalars().all()}
+        events = [by_id[i] for i in event_ids if i in by_id]  # preserve saved order
+
+    services: list[ServiceProvider] = []
+    if service_ids:
+        rows = await session.execute(
+            select(ServiceProvider)
+            .where(ServiceProvider.id.in_(service_ids))
+            .where(ServiceProvider.is_active.is_(True))
+        )
+        by_id = {s.id: s for s in rows.scalars().all()}
+        services = [by_id[i] for i in service_ids if i in by_id]
+
+    return events, services
+
+
+async def add_favorite(
+    session: AsyncSession, user_id: UUID, *, item_type: str, item_id: UUID
+) -> bool:
+    """Idempotent save. Returns True (favorited) regardless of prior state."""
+    stmt = (
+        pg_insert(Favorite)
+        .values(user_id=user_id, item_type=item_type, item_id=item_id)
+        .on_conflict_do_nothing(constraint="uq_favorites_user_item")
+    )
+    await session.execute(stmt)
+    await session.commit()
+    return True
+
+
+async def remove_favorite(
+    session: AsyncSession, user_id: UUID, *, item_type: str, item_id: UUID
+) -> bool:
+    """Idempotent un-save. Returns False (not favorited)."""
+    result = await session.execute(
+        select(Favorite).where(
+            Favorite.user_id == user_id,
+            Favorite.item_type == item_type,
+            Favorite.item_id == item_id,
+        )
+    )
+    favorite = result.scalar_one_or_none()
+    if favorite is not None:
+        await session.delete(favorite)
+        await session.commit()
+    return False

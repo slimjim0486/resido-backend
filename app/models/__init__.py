@@ -4,6 +4,7 @@ from app.models.checklist import ChecklistItem
 from app.models.deadline import Deadline
 from app.models.document import Document
 from app.models.event import Event
+from app.models.favorite import Favorite
 from app.models.kb_chunk import KBChunk
 from app.models.lead import Lead
 from app.models.profile import Profile
@@ -21,6 +22,7 @@ __all__ = [
     "Deadline",
     "Document",
     "Event",
+    "Favorite",
     "ServiceProvider",
     "Source",
     "KBChunk",

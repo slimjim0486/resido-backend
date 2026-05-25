@@ -10,6 +10,14 @@ from app.database import get_db
 from app.dependencies import get_current_active_user
 from app.models.user import User
 from app.schemas.base import APIResponse
+from app.schemas.events import EventOut
+from app.schemas.favorites import (
+    FavoriteCreate,
+    FavoriteIdsOut,
+    FavoritesOut,
+    FavoriteToggleOut,
+)
+from app.schemas.services import ServiceProviderOut
 from app.schemas.workspace import (
     ChecklistItemCreate,
     ChecklistItemOut,
@@ -154,3 +162,43 @@ async def set_visa_anchor(data: VisaAnchorIn, current_user: CurrentUser, session
         data=[DocumentOut.model_validate(d) for d in cluster],
         message="Set up your visa renewals",
     )
+
+
+# ─── Favorites / saved items ─────────────────────────────────────────────────
+@router.get("/favorites", response_model=APIResponse[FavoritesOut])
+async def get_favorites(current_user: CurrentUser, session: Session):
+    """Saved events & providers, resolved to their live rows (newest first)."""
+    events, services = await workspace.list_favorites(session, current_user.id)
+    return APIResponse(
+        data=FavoritesOut(
+            events=[EventOut.model_validate(e) for e in events],
+            services=[ServiceProviderOut.model_validate(s) for s in services],
+        )
+    )
+
+
+@router.get("/favorites/ids", response_model=APIResponse[FavoriteIdsOut])
+async def get_favorite_ids(current_user: CurrentUser, session: Session):
+    """Just the saved ids — cheap hydration of the heart-toggle state."""
+    ids = await workspace.list_favorite_ids(session, current_user.id)
+    return APIResponse(data=FavoriteIdsOut(events=ids["event"], services=ids["service"]))
+
+
+@router.post(
+    "/favorites", response_model=APIResponse[FavoriteToggleOut], status_code=status.HTTP_201_CREATED
+)
+async def add_favorite(data: FavoriteCreate, current_user: CurrentUser, session: Session):
+    favorited = await workspace.add_favorite(
+        session, current_user.id, item_type=data.item_type, item_id=data.item_id
+    )
+    return APIResponse(data=FavoriteToggleOut(favorited=favorited), message="Saved")
+
+
+@router.delete("/favorites/{item_type}/{item_id}", response_model=APIResponse[FavoriteToggleOut])
+async def remove_favorite(
+    item_type: str, item_id: UUID, current_user: CurrentUser, session: Session
+):
+    favorited = await workspace.remove_favorite(
+        session, current_user.id, item_type=item_type, item_id=item_id
+    )
+    return APIResponse(data=FavoriteToggleOut(favorited=favorited), message="Removed")
