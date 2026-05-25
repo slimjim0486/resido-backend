@@ -71,3 +71,32 @@ class DeadlineOut(ORMBaseModel):
     due_date: date
     recurrence: str | None = None
     source_url: str | None = None
+
+
+# ─── Renewals / tracked documents (see DOCUMENTS.md) ─────────────────────────
+class DocumentCreate(BaseModel):
+    doc_type: str = Field(min_length=1, max_length=80)  # key into renewals.RENEWAL_TYPES
+    expiry_date: date | None = None
+    confidence: str | None = None  # confirmed|estimated; defaults to confirmed
+    title: str | None = None
+    notes: str | None = None
+
+
+class DocumentUpdate(BaseModel):
+    expiry_date: date | None = None
+    confidence: str | None = None
+    title: str | None = None
+    notes: str | None = None
+
+
+class DocumentOut(ORMBaseModel):
+    id: UUID
+    doc_type: str | None = None
+    title: str
+    expiry_date: date | None = None
+    confidence: str
+    notes: str | None = None
+
+
+class VisaAnchorIn(BaseModel):
+    expiry_date: date

@@ -16,8 +16,12 @@ from app.schemas.workspace import (
     ChecklistItemUpdate,
     DeadlineCreate,
     DeadlineOut,
+    DocumentCreate,
+    DocumentOut,
+    DocumentUpdate,
     ProfileOut,
     ProfileUpdate,
+    VisaAnchorIn,
 )
 from app.services import workspace
 
@@ -95,3 +99,58 @@ async def create_deadline(data: DeadlineCreate, current_user: CurrentUser, sessi
         source_url=data.source_url,
     )
     return APIResponse(data=DeadlineOut.model_validate(deadline), message="Reminder set")
+
+
+# ─── Renewals / tracked documents (see DOCUMENTS.md) ─────────────────────────
+@router.get("/documents", response_model=APIResponse[list[DocumentOut]])
+async def get_documents(current_user: CurrentUser, session: Session):
+    docs = await workspace.list_documents(session, current_user.id)
+    return APIResponse(data=[DocumentOut.model_validate(d) for d in docs])
+
+
+@router.post(
+    "/documents", response_model=APIResponse[DocumentOut], status_code=status.HTTP_201_CREATED
+)
+async def create_document(data: DocumentCreate, current_user: CurrentUser, session: Session):
+    doc = await workspace.add_document(
+        session,
+        current_user.id,
+        doc_type=data.doc_type,
+        expiry_date=data.expiry_date,
+        confidence=data.confidence or "confirmed",
+        title=data.title,
+        notes=data.notes,
+    )
+    return APIResponse(data=DocumentOut.model_validate(doc), message="Tracking this renewal")
+
+
+@router.patch("/documents/{document_id}", response_model=APIResponse[DocumentOut])
+async def patch_document(
+    document_id: UUID, data: DocumentUpdate, current_user: CurrentUser, session: Session
+):
+    doc = await workspace.update_document(
+        session, current_user.id, document_id, data.model_dump(exclude_unset=True)
+    )
+    if doc is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    return APIResponse(data=DocumentOut.model_validate(doc))
+
+
+@router.delete("/documents/{document_id}", response_model=APIResponse[None])
+async def delete_document(document_id: UUID, current_user: CurrentUser, session: Session):
+    ok = await workspace.delete_document(session, current_user.id, document_id)
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    return APIResponse(data=None, message="Stopped tracking")
+
+
+@router.post("/visa-anchor", response_model=APIResponse[list[DocumentOut]])
+async def set_visa_anchor(data: VisaAnchorIn, current_user: CurrentUser, session: Session):
+    """One visa expiry date → the visa cluster (visa + EID + health insurance)."""
+    cluster = await workspace.apply_visa_anchor(
+        session, current_user.id, expiry_date=data.expiry_date
+    )
+    return APIResponse(
+        data=[DocumentOut.model_validate(d) for d in cluster],
+        message="Set up your visa renewals",
+    )

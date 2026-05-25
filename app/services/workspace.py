@@ -11,8 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.checklist import ChecklistItem
 from app.models.deadline import Deadline
+from app.models.document import Document
 from app.models.lead import Lead
 from app.models.profile import Profile
+from app.services import renewals
 
 
 async def get_or_create_profile(session: AsyncSession, user_id: UUID) -> Profile:
@@ -112,6 +114,105 @@ async def add_deadline(
     await session.commit()
     await session.refresh(deadline)
     return deadline
+
+
+# ─── Renewals / tracked documents (see DOCUMENTS.md) ─────────────────────────
+# A renewal is a document row holding only {doc_type, expiry_date, confidence} —
+# the radar tracks dates, never the document itself.
+
+
+async def list_documents(session: AsyncSession, user_id: UUID) -> list[Document]:
+    result = await session.execute(
+        select(Document)
+        .where(Document.user_id == user_id)
+        .order_by(Document.expiry_date.asc().nulls_last())
+    )
+    return list(result.scalars().all())
+
+
+async def add_document(
+    session: AsyncSession,
+    user_id: UUID,
+    *,
+    doc_type: str,
+    expiry_date: date | None = None,
+    confidence: str = renewals.CONFIRMED,
+    title: str | None = None,
+    notes: str | None = None,
+) -> Document:
+    rt = renewals.get_type(doc_type)
+    document = Document(
+        user_id=user_id,
+        doc_type=doc_type,
+        title=title or (rt.label if rt else doc_type),
+        expiry_date=expiry_date,
+        confidence=confidence,
+        notes=notes,
+    )
+    session.add(document)
+    await session.commit()
+    await session.refresh(document)
+    return document
+
+
+async def update_document(
+    session: AsyncSession, user_id: UUID, document_id: UUID, fields: dict
+) -> Document | None:
+    document = await session.get(Document, document_id)
+    if document is None or document.user_id != user_id:
+        return None
+    # A user-supplied edit promotes an estimated date to confirmed unless told otherwise.
+    if "expiry_date" in fields and "confidence" not in fields:
+        fields["confidence"] = renewals.CONFIRMED
+    for key, value in fields.items():
+        if value is not None and hasattr(document, key):
+            setattr(document, key, value)
+    await session.commit()
+    await session.refresh(document)
+    return document
+
+
+async def delete_document(session: AsyncSession, user_id: UUID, document_id: UUID) -> bool:
+    document = await session.get(Document, document_id)
+    if document is None or document.user_id != user_id:
+        return False
+    await session.delete(document)
+    await session.commit()
+    return True
+
+
+async def apply_visa_anchor(
+    session: AsyncSession, user_id: UUID, *, expiry_date: date
+) -> list[Document]:
+    """The anchor cascade: one visa expiry date populates the whole visa cluster.
+
+    Idempotent per doc_type — re-running updates the existing row rather than
+    duplicating it (so re-entering the date just corrects the cluster).
+    """
+    existing = {d.doc_type: d for d in await list_documents(session, user_id)}
+    cluster: list[Document] = []
+    for doc_type, confidence in renewals.VISA_ANCHOR_CASCADE:
+        current = existing.get(doc_type)
+        if current is None:
+            cluster.append(
+                await add_document(
+                    session,
+                    user_id,
+                    doc_type=doc_type,
+                    expiry_date=expiry_date,
+                    confidence=confidence,
+                )
+            )
+        else:
+            updated = await update_document(
+                session,
+                user_id,
+                current.id,
+                {"expiry_date": expiry_date, "confidence": confidence},
+            )
+            if updated is not None:
+                cluster.append(updated)
+    return cluster
 
 
 async def create_lead(

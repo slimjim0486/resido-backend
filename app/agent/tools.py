@@ -1,8 +1,9 @@
 """Tool definitions + dispatcher for the agent.
 
 Capabilities map to the requirement: READ (kb_search, get_profile, list_checklist,
-list_deadlines), WRITE (add_checklist_item, set_reminder, create_lead), EDIT
-(update_profile, update_checklist_item). All mutations go through the shared
+list_deadlines, list_renewals), WRITE (add_checklist_item, set_reminder,
+track_renewal, set_visa_anchor, create_lead), EDIT (update_profile,
+update_checklist_item, update_renewal). All mutations go through the shared
 `services.workspace` layer so behavior matches the REST API exactly.
 """
 
@@ -107,6 +108,57 @@ TOOLS: list[dict] = [
                 "source_url": {"type": "string"},
             },
             "required": ["title", "due_date"],
+        },
+    },
+    {
+        "name": "list_renewals",
+        "description": "List the documents/renewals the user is tracking (visa, Emirates ID, car registration, insurance, tenancy, etc.) with their expiry dates.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "track_renewal",
+        "description": "Track a document's expiry date so we can remind the user before it lapses (and avoid fines). We track DATES ONLY — never ask for or store ID numbers, scans, or copies.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "doc_type": {
+                    "type": "string",
+                    "description": "visa | emirates_id | passport | uae_driving_license | car_registration | motor_insurance | health_insurance | ejari_tenancy | trade_license | domestic_worker_visa | domestic_worker_insurance",
+                },
+                "expiry_date": {"type": "string", "description": "YYYY-MM-DD"},
+                "confidence": {
+                    "type": "string",
+                    "enum": ["confirmed", "estimated"],
+                    "description": "Use 'estimated' if the user didn't state the date directly; defaults to 'confirmed'.",
+                },
+                "notes": {"type": "string"},
+            },
+            "required": ["doc_type"],
+        },
+    },
+    {
+        "name": "update_renewal",
+        "description": "Update a tracked renewal's expiry date or notes. Requires document_id (from list_renewals).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "document_id": {"type": "string"},
+                "expiry_date": {"type": "string", "description": "YYYY-MM-DD"},
+                "confidence": {"type": "string", "enum": ["confirmed", "estimated"]},
+                "notes": {"type": "string"},
+            },
+            "required": ["document_id"],
+        },
+    },
+    {
+        "name": "set_visa_anchor",
+        "description": "Given the user's residency visa expiry date, set up their whole visa cluster in one step — visa, Emirates ID, and health insurance (the latter two as estimated, same date). Offer this the moment a user mentions when their visa expires.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "expiry_date": {"type": "string", "description": "Visa expiry, YYYY-MM-DD"},
+            },
+            "required": ["expiry_date"],
         },
     },
     {
@@ -300,6 +352,70 @@ async def execute_tool(
             {"ok": True, "id": str(d.id)},
             [],
             {"type": "reminder_set", "summary": f"Reminder set: {d.title} on {d.due_date.isoformat()}"},
+        )
+
+    if name == "list_renewals":
+        docs = await workspace.list_documents(session, user_id)
+        return (
+            {
+                "renewals": [
+                    {
+                        "id": str(d.id),
+                        "doc_type": d.doc_type,
+                        "title": d.title,
+                        "expiry_date": d.expiry_date.isoformat() if d.expiry_date else None,
+                        "confidence": d.confidence,
+                    }
+                    for d in docs
+                ]
+            },
+            [],
+            None,
+        )
+
+    if name == "track_renewal":
+        doc = await workspace.add_document(
+            session,
+            user_id,
+            doc_type=tool_input["doc_type"],
+            expiry_date=_parse_date(tool_input.get("expiry_date")),
+            confidence=tool_input.get("confidence") or "confirmed",
+            notes=tool_input.get("notes"),
+        )
+        return (
+            {"ok": True, "id": str(doc.id)},
+            [],
+            {"type": "renewal_tracked", "summary": f"Now tracking your {doc.title}"},
+        )
+
+    if name == "update_renewal":
+        try:
+            document_id = UUID(tool_input["document_id"])
+        except (ValueError, KeyError):
+            return {"ok": False, "error": "invalid document_id"}, [], None
+        fields = {k: v for k, v in tool_input.items() if k != "document_id"}
+        if "expiry_date" in fields:
+            fields["expiry_date"] = _parse_date(fields["expiry_date"])
+        doc = await workspace.update_document(session, user_id, document_id, fields)
+        if doc is None:
+            return {"ok": False, "error": "not found"}, [], None
+        return {"ok": True}, [], {"type": "renewal_updated", "summary": f"Updated your {doc.title}"}
+
+    if name == "set_visa_anchor":
+        expiry = _parse_date(tool_input.get("expiry_date"))
+        if expiry is None:
+            return {"ok": False, "error": "expiry_date must be YYYY-MM-DD"}, [], None
+        cluster = await workspace.apply_visa_anchor(session, user_id, expiry_date=expiry)
+        return (
+            {
+                "ok": True,
+                "tracked": [{"title": d.title, "confidence": d.confidence} for d in cluster],
+            },
+            [],
+            {
+                "type": "visa_anchor_set",
+                "summary": f"Set up {len(cluster)} visa renewals (Emirates ID & insurance estimated — confirm anytime)",
+            },
         )
 
     if name == "find_services":
