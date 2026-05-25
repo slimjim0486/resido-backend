@@ -8,17 +8,25 @@ touching the pipeline. Each cell runs in its own try/except so one bad query can
 sink the grid run.
 """
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.logging import get_logger
-from app.ingestion import apify_client
+from app.ingestion import apify_client, r2_storage
 from app.ingestion.services_registry import Category, grid, search_term
 from app.services import providers as providers_service
 
 logger = get_logger(__name__)
+
+
+def _photo_key(row: dict) -> str:
+    """Stable R2 key for a provider photo, keyed on the durable Google place_id so a
+    monthly re-scrape overwrites the same object (bounded object count, fresh photo)."""
+    digest = hashlib.sha1(row["place_id"].encode()).hexdigest()
+    return f"providers/{digest}"
 
 # Google Maps detail-page scrapes are slow; give a cell run plenty of headroom.
 _CELL_TIMEOUT = 300.0
@@ -157,6 +165,9 @@ async def ingest_cell(
     source = (settings.APIFY_MAPS_ACTOR or "google_maps").split("/")[-1]
     raw = await _scrape_cell(category, area, per_cell=per_cell)
     rows = normalize_cell(raw, category=category.key, area=area, source="google_maps")
+    # Re-host scraped Google photos in R2 (their source URLs are token-signed and
+    # expire) before persisting. No-op when R2 isn't configured.
+    await r2_storage.mirror_field(rows, src_field="photo_url", key_fn=_photo_key)
     inserted = await providers_service.upsert_providers(session, rows)
     # Reconcile this cell: providers not seen for ~2 monthly cycles get soft-hidden.
     # On a first scrape this is a no-op (survivors were just refreshed).

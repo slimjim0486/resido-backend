@@ -152,6 +152,36 @@ swap `username/actor` → `username~actor` for the REST path.)
 
 ---
 
+## 4c. Image mirroring (Cloudflare R2)
+
+Scraped image URLs are short-lived — Google Maps photo links are token-signed and expire,
+ticket-site images are hotlink-protected/rate-limited — so storing them verbatim leaves cards
+with broken images within days. At ingest we **re-host every scraped image in the R2 `resido`
+bucket** and persist *our* stable public URL instead.
+
+```
+normalize → mirror_field (download → R2 PutObject) → upsert      ── write path only
+```
+
+- **Where it hooks:** `events.ingest_apify_events` (`image_url`) and `providers_maps.ingest_cell`
+  (`photo_url`), right before upsert. `dry_run_cell` and the Exa events path are untouched
+  (Exa yields no images; dry runs never write).
+- **Keys are content-addressed on the row's identity** — `events/<sha1(url)>`,
+  `providers/<sha1(place_id)>` — so a re-scrape overwrites the same object (bounded object count;
+  provider photos refresh monthly in place).
+- **No SDK.** `app/ingestion/r2_storage.py` SigV4-signs a single S3 `PutObject` over httpx —
+  same raw-REST approach as Apify/Exa, and sidesteps boto3's default-checksum quirks with
+  S3-compatible stores. Downloads use a browser UA (to clear hotlink protection), a 10 MB cap,
+  and content-type sniffing for CDNs that mislabel.
+- **Graceful + gated.** Set all five `R2_*` vars (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
+  `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_URL`) and mirroring runs; leave any blank and
+  it no-ops, keeping source URLs (the local-dev default). Any per-image download/upload failure
+  logs a warning and falls back to the source URL — a bad image can't sink an ingest run.
+  `R2_PUBLIC_URL` is the bucket's Public Development URL / custom domain, **not** the
+  account-level `*.r2.cloudflarestorage.com` S3 endpoint (that's derived from the account id).
+
+---
+
 ## 5. Tier C — Live on-demand (the long tail + "latest" safety valve)
 
 When the agent's `kb_search` misses, don't fail or hallucinate:

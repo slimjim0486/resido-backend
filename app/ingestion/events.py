@@ -7,16 +7,24 @@ can swap actors without touching the pipeline. No embeddings — these rows are 
 self-expiring feed, not a RAG corpus.
 """
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.logging import get_logger
-from app.ingestion import apify_client
+from app.ingestion import apify_client, r2_storage
 from app.services import events as events_service
 
 logger = get_logger(__name__)
+
+
+def _image_key(row: dict) -> str:
+    """Stable R2 key for an event image, content-addressed on the event's own URL
+    (its DB identity) so a re-scrape of the same event overwrites in place."""
+    digest = hashlib.sha1(row["url"].encode()).hexdigest()
+    return f"events/{digest}"
 
 
 def _first(item: dict, *keys: str):
@@ -103,6 +111,8 @@ async def ingest_apify_events(
     normalized = [
         n for n in (normalize(i, source=src, default_category=default_category) for i in raw) if n
     ]
+    # Re-host scraped images in R2 before persisting, so stored URLs don't expire.
+    await r2_storage.mirror_field(normalized, src_field="image_url", key_fn=_image_key)
     inserted = await events_service.upsert_events(session, normalized)
     logger.info(
         "events_ingested", source=src, fetched=len(raw), kept=len(normalized), inserted=inserted

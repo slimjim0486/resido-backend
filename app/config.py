@@ -75,6 +75,20 @@ class Settings(BaseSettings):
     # cycles) — soft-hides stale/closed listings without dropping ranking-noise.
     SERVICES_STALE_GRACE_DAYS: int = 60
 
+    # ─── Object storage: Cloudflare R2 (scraped-image mirroring) ───
+    # Scraped image URLs (Google Maps photos, ticket-site images) are short-lived
+    # — token-signed, hotlink-protected, or rate-limited. At ingest we re-host them
+    # in the R2 `resido` bucket and store the stable public URL instead. All five
+    # must be set (they live on the Railway service) or mirroring no-ops and the
+    # original source URL is kept. Set the same names in Railway's variables.
+    R2_ACCOUNT_ID: str = ""
+    R2_ACCESS_KEY_ID: str = ""
+    R2_SECRET_ACCESS_KEY: str = ""
+    R2_BUCKET: str = "resido"
+    # The bucket's Public Development URL (or custom domain), no trailing slash,
+    # e.g. https://pub-xxxxxxxx.r2.dev — NOT the account-level S3 API endpoint.
+    R2_PUBLIC_URL: str = ""
+
     # ─── CORS ───
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8080"
 
@@ -104,6 +118,24 @@ class Settings(BaseSettings):
     @property
     def ai_enabled(self) -> bool:
         return bool(self.ANTHROPIC_API_KEY)
+
+    @property
+    def r2_enabled(self) -> bool:
+        """True only when every R2 credential is present; gates image mirroring."""
+        return all(
+            (
+                self.R2_ACCOUNT_ID,
+                self.R2_ACCESS_KEY_ID,
+                self.R2_SECRET_ACCESS_KEY,
+                self.R2_BUCKET,
+                self.R2_PUBLIC_URL,
+            )
+        )
+
+    @property
+    def r2_endpoint_host(self) -> str:
+        """Account-level S3 API host R2 uploads target (derived, not configured)."""
+        return f"{self.R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
 
 
 @lru_cache
