@@ -14,7 +14,10 @@ APIFY_BASE = "https://api.apify.com/v2"
 async def run_actor(actor_id: str, run_input: dict, timeout: float = 180.0) -> list[dict]:
     if not settings.APIFY_TOKEN:
         raise RuntimeError("APIFY_TOKEN not set")
-    url = f"{APIFY_BASE}/acts/{actor_id}/run-sync-get-dataset-items?token={settings.APIFY_TOKEN}"
+    # Apify's REST path wants the "username~actorName" form; a store actor like
+    # "compass/crawler-google-places" must have its slash swapped or the path breaks.
+    actor_path = actor_id.replace("/", "~")
+    url = f"{APIFY_BASE}/acts/{actor_path}/run-sync-get-dataset-items?token={settings.APIFY_TOKEN}"
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(url, json=run_input)
         resp.raise_for_status()
