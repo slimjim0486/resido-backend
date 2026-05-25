@@ -19,3 +19,6 @@ class Source(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     category: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
     last_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     refresh_ttl_days: Mapped[int] = mapped_column(Integer, default=14, nullable=False)
+    # sha256 of the last-ingested page text; lets refresh skip re-embedding when
+    # a refetched page is byte-identical (the main recurring-cost lever).
+    content_hash: Mapped[str | None] = mapped_column(String(64))

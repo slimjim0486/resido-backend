@@ -35,3 +35,7 @@ python -m scripts.seed_kb
 ## Deploy (Railway)
 `railway.json` runs `alembic upgrade head` then serves uvicorn on `$PORT`, with `/health`
 as the healthcheck. Set the service's env vars (see `.env.example`) and point it at this repo.
+
+**Scheduled ingestion** runs as two cron services in the same project:
+`railway.refresh-kb.json` (Tier A KB refresh, every 6h) and `railway.seed-events.json`
+(Tier B events feed, daily). Setup + per-job env vars: see `DEPLOY_CRON.md`.

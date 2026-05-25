@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import workspace
 from app.services.kb import search_kb
+from app.services.live_search import live_search
 
 # ─── Anthropic tool schemas ───────────────────────────────────────────────
 TOOLS: list[dict] = [
@@ -140,9 +141,8 @@ async def execute_tool(
     """Returns (result_for_model, citations, action)."""
 
     if name == "kb_search":
-        chunks = await search_kb(
-            session, tool_input["query"], category=tool_input.get("category"), limit=5
-        )
+        query, category = tool_input["query"], tool_input.get("category")
+        chunks = await search_kb(session, query, category=category, limit=5)
         citations, results = [], []
         for c in chunks:
             verified = c.fetched_at.date().isoformat() if c.fetched_at else None
@@ -158,7 +158,24 @@ async def execute_tool(
                     "content": c.content[:1500],
                 }
             )
-        return {"results": results, "count": len(results)}, citations, None
+
+        source_note = "Verified knowledge base."
+        if not results:
+            # Tier C: KB miss → just-in-time live web search. Authoritative hits
+            # are queued for ingestion into the verified KB on the next refresh.
+            for r in await live_search(session, query, category=category):
+                # No fetched_at on the citation: these aren't verified KB sources,
+                # so the chip won't claim a "verified" date.
+                citations.append(
+                    {"title": r["title"], "url": r["url"], "category": r["category"], "fetched_at": None}
+                )
+                results.append(r)
+            source_note = (
+                "No verified KB entry — these are LIVE web results, not yet verified. "
+                "Tell the user they're fresh from the web and should be confirmed "
+                "against the official source before acting on fees/legal/deadline details."
+            )
+        return {"results": results, "count": len(results), "source_note": source_note}, citations, None
 
     if name == "get_profile":
         p = await workspace.get_or_create_profile(session, user_id)

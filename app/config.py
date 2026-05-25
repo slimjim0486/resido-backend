@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     FIRECRAWL_API_KEY: str = ""
     EXA_API_KEY: str = ""
     APIFY_TOKEN: str = ""
+    # Apify actor that scrapes the lifestyle events feed (Tier B), e.g.
+    # "<username>/dubai-events-scraper". Unset → seed uses curated samples.
+    APIFY_EVENTS_ACTOR: str = ""
 
     # ─── CORS ───
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8080"

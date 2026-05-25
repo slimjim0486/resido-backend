@@ -26,8 +26,8 @@ SEED: dict[str, list[str]] = {
 
 
 async def main() -> None:
-    if not settings.FIRECRAWL_API_KEY:
-        print("⚠️  FIRECRAWL_API_KEY not set — add it to .env to seed the KB.")
+    if not (settings.EXA_API_KEY or settings.FIRECRAWL_API_KEY):
+        print("⚠️  Set EXA_API_KEY (primary fetch path) or FIRECRAWL_API_KEY to seed the KB.")
         return
     if not settings.VOYAGE_API_KEY and settings.EMBEDDINGS_PROVIDER == "voyage":
         print("ℹ️  No embeddings key — chunks will be stored without vectors "
