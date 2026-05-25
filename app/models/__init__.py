@@ -7,6 +7,7 @@ from app.models.event import Event
 from app.models.kb_chunk import KBChunk
 from app.models.lead import Lead
 from app.models.profile import Profile
+from app.models.service import ServiceProvider
 from app.models.source import Source
 from app.models.user import User
 
@@ -17,6 +18,7 @@ __all__ = [
     "Deadline",
     "Document",
     "Event",
+    "ServiceProvider",
     "Source",
     "KBChunk",
     "Lead",

@@ -58,6 +58,15 @@ class Settings(BaseSettings):
     # Exa→Claude structured event extraction (Tier B+, see EVENTS_EXTRACTION.md).
     EVENTS_EXTRACT: bool = True
     EVENTS_EXTRACT_MAX_PAGES: int = 3  # pages/category sent to Claude
+    # Off-the-shelf Apify Google Maps actor that powers the Services vertical
+    # (Tier A-style durable provider rows; see backend/INGESTION.md). Reuses
+    # APIFY_TOKEN — no new secret. Unset/blank → seed uses curated samples.
+    APIFY_MAPS_ACTOR: str = "compass/crawler-google-places"
+    # Providers scraped per (category × area) grid cell each run.
+    SERVICES_PER_CELL: int = 15
+    # Re-scrape a grid cell only when its freshest row is older than this (days).
+    # Monthly cadence: durable rows, not a churny feed.
+    SERVICES_TTL_DAYS: int = 30
 
     # ─── CORS ───
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8080"
