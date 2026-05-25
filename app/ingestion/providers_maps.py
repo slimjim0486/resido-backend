@@ -128,7 +128,9 @@ async def _scrape_cell(category: Category, area: str, *, per_cell: int) -> list[
         "language": "en",
         "countryCode": "ae",
         "skipClosedPlaces": True,
-        "scrapePlaceDetailPage": True,  # needed for opening hours
+        # Opening hours require opening each place's detail page (the costliest
+        # toggle); gated so re-seeds can run fast without it.
+        "scrapePlaceDetailPage": settings.SERVICES_SCRAPE_DETAILS,
     }
     return await apify_client.run_actor(actor, run_input, timeout=_CELL_TIMEOUT)
 

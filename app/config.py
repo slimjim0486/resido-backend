@@ -67,6 +67,13 @@ class Settings(BaseSettings):
     # Re-scrape a grid cell only when its freshest row is older than this (days).
     # Monthly cadence: durable rows, not a churny feed.
     SERVICES_TTL_DAYS: int = 30
+    # Open each place's detail page during a scrape to capture opening hours.
+    # The biggest cost/time lever — turn off (SERVICES_SCRAPE_DETAILS=false) for
+    # fast, cheap re-seeds; you lose `hours` but keep everything else.
+    SERVICES_SCRAPE_DETAILS: bool = True
+    # Retire a provider after it's missed this many days of scrapes (≈ 2 monthly
+    # cycles) — soft-hides stale/closed listings without dropping ranking-noise.
+    SERVICES_STALE_GRACE_DAYS: int = 60
 
     # ─── CORS ───
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8080"
