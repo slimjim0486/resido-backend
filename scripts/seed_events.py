@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from app.config import settings
 from app.database import async_session_maker
 from app.ingestion.events import ingest_apify_events
+from app.ingestion.events_exa import ingest_exa_events
 from app.services import events as events_service
 
 
@@ -102,10 +103,13 @@ async def main() -> None:
         if settings.APIFY_TOKEN and settings.APIFY_EVENTS_ACTOR:
             n = await ingest_apify_events(session)
             print(f"Apify ({settings.APIFY_EVENTS_ACTOR}): inserted {n} new events.")
+        elif settings.EXA_API_KEY:
+            n = await ingest_exa_events(session)
+            print(f"Exa: inserted {n} new events across the lifestyle categories.")
         else:
             n = await events_service.upsert_events(session, _sample_events())
             print(
-                "No Apify events actor configured (set APIFY_EVENTS_ACTOR) — "
+                "No EXA_API_KEY or Apify actor configured — "
                 f"inserted {n} curated sample events so the feed is demoable."
             )
 

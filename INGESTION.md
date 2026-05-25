@@ -142,10 +142,15 @@ only TTL-elapsed sources, oldest-first, capped per run; `scripts/refresh_kb.py` 
 the Tier B feed runs alongside it (`railway.seed-events.json`, daily). Setup steps + env vars:
 [`backend/DEPLOY_CRON.md`](DEPLOY_CRON.md).
 
-**Tier B shipped (2026-05-25):** `events` table + migration `0002_events`; `app/ingestion/events.py`
-(configurable `APIFY_EVENTS_ACTOR` + defensive normalizer); public `GET /api/v1/events`;
-`scripts/seed_events.py` (falls back to curated samples when no actor is set); Flutter Home
-"What's on this week" strip wired to the feed with a graceful sample fallback. **Remaining:** pick/point
-a real Apify actor and put `seed_events` on a daily schedule.
+**Tier B shipped (2026-05-25):** `events` table + migration `0002_events`; public `GET /api/v1/events`;
+`scripts/seed_events.py`; Flutter Home strip + per-category Explore listings + Event detail page, all
+wired to the feed with a graceful sample fallback.
+
+**Events source precedence** (`seed_events`): **Apify** (`app/ingestion/events.py`, if `APIFY_EVENTS_ACTOR`
+set) → **Exa** (`app/ingestion/events_exa.py`, current default — one query per lifestyle key, tagged with
+that key so the 6 tiles bucket correctly; lossy on date/venue/price) → curated samples. Exa items are
+current, real, tappable links; cards/detail hide the date pill when there's no date and fall back to the
+source host. **Upgrade path:** a custom Apify actor (or Exa→Claude structured extraction) for true
+per-event date/venue/price.
 
 Tiers A and B are independent pipelines and can proceed in parallel.

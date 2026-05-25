@@ -5,7 +5,7 @@ Two scheduled jobs keep the ingestion moat fresh (see `backend/INGESTION.md`):
 | Job | Script | Config file | Default schedule (UTC) | What it does |
 |---|---|---|---|---|
 | **KB refresh** (Tier A) | `scripts/refresh_kb.py` | `railway.refresh-kb.json` | `0 */6 * * *` (every 6h) | Registers the source allowlist, then re-fetches only TTL-elapsed sources. Hash gate skips re-embedding unchanged pages, so most runs are near-free. |
-| **Events feed** (Tier B) | `scripts/seed_events.py` | `railway.seed-events.json` | `0 2 * * *` (06:00 Dubai) | Pulls the lifestyle "What's on" feed via the configured Apify actor (or refreshes the rolling sample set if no actor is set). |
+| **Events feed** (Tier B) | `scripts/seed_events.py` | `railway.seed-events.json` | `0 2 * * *` (06:00 Dubai) | Pulls the lifestyle "What's on" feed. Source precedence: **Apify actor** if `APIFY_EVENTS_ACTOR` set → else **Exa** per-category queries (current default) → else rolling sample set. |
 
 > **Schedules are UTC.** Dubai is UTC+4, so `0 2 * * *` fires at 06:00 Dubai — before users wake. Edit `cronSchedule` in the config file to change it.
 
@@ -41,12 +41,13 @@ DATABASE_URL = ${{Postgres.DATABASE_URL}}
 | Variable | `kb-refresh` | `events-feed` | Notes |
 |---|---|---|---|
 | `DATABASE_URL` | ✓ | ✓ | same Postgres as web |
-| `EXA_API_KEY` | ✓ | — | primary fetch path |
+| `EXA_API_KEY` | ✓ | ✓ | KB fetch (refresh) **and** the events feed (per-category queries) |
 | `VOYAGE_API_KEY` | ✓ | — | embeddings; without it, chunks store without vectors (keyword fallback) |
 | `EMBEDDINGS_PROVIDER` / `VOYAGE_MODEL` | ✓ | — | match the web service |
 | `FIRECRAWL_API_KEY` | optional | — | fallback fetch only |
-| `APIFY_TOKEN` | — | ✓ | required for real scrapes |
-| `APIFY_EVENTS_ACTOR` | — | ✓ | e.g. `<user>/dubai-events-scraper`; **unset → re-seeds the rolling sample set** (harmless) |
+| `APIFY_TOKEN` / `APIFY_EVENTS_ACTOR` | — | optional | if set, a real scraper takes precedence over Exa for events |
+
+> Events-feed precedence: `APIFY_EVENTS_ACTOR` (if set) → **Exa** (default, needs `EXA_API_KEY`) → curated samples.
 
 `ANTHROPIC_API_KEY`, `REDIS_URL`, `SECRET_KEY`, `CORS_ORIGINS` are **not** needed by either cron — they fall back to safe defaults.
 
