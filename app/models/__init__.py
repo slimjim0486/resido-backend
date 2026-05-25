@@ -9,10 +9,13 @@ from app.models.lead import Lead
 from app.models.profile import Profile
 from app.models.service import ServiceProvider
 from app.models.source import Source
-from app.models.user import User
+from app.models.user import AuthIdentity, AuthSession, EmailOTPChallenge, User
 
 __all__ = [
     "User",
+    "AuthIdentity",
+    "AuthSession",
+    "EmailOTPChallenge",
     "Profile",
     "ChecklistItem",
     "Deadline",

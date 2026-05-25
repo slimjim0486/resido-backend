@@ -31,8 +31,23 @@ class Settings(BaseSettings):
 
     # ─── JWT ───
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+
+    # ─── Auth ───
+    OTP_EXPIRE_MINUTES: int = 10
+    OTP_RESEND_SECONDS: int = 60
+    OTP_MAX_ATTEMPTS: int = 5
+    OTP_REQUESTS_PER_HOUR: int = 5
+    APPLE_CLIENT_ID: str = ""  # iOS bundle ID or Services ID used as the token audience.
+    RESEND_API_KEY: str = ""
+    RESEND_FROM_EMAIL: str = "Resido <no-reply@resido.app>"
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_USE_TLS: bool = True
+    OTP_EMAIL_FROM: str = "Resido <no-reply@resido.app>"
 
     # ─── AI: Claude ───
     ANTHROPIC_API_KEY: str = ""

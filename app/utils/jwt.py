@@ -1,7 +1,8 @@
-"""JWT issuing/verification + password hashing. Harvested as-is (product-agnostic)."""
+"""JWT issuing/verification + password hashing."""
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from uuid import uuid4
 
 import jwt
 from jwt import InvalidTokenError
@@ -17,7 +18,9 @@ def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = 
     expire = datetime.now(timezone.utc) + (
         expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
-    to_encode.update({"exp": expire, "type": "access"})
+    to_encode.update(
+        {"exp": expire, "iat": datetime.now(timezone.utc), "jti": str(uuid4()), "type": "access"}
+    )
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
@@ -40,6 +43,13 @@ def decode_access_token(token: str) -> dict[str, Any]:
     payload = verify_token(token)
     if payload.get("type") != "access":
         raise ValueError("Invalid access token type")
+    return payload
+
+
+def decode_refresh_token(token: str) -> dict[str, Any]:
+    payload = verify_token(token)
+    if payload.get("type") != "refresh":
+        raise ValueError("Invalid refresh token type")
     return payload
 
 
