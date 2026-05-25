@@ -25,9 +25,9 @@ logger = get_logger(__name__)
 
 # Our 6 lifestyle keys → the Exa query that finds current pages for each.
 CATEGORY_QUERIES: dict[str, str] = {
-    "dining": "best restaurants, new openings and brunches in Dubai this week",
+    "dining": "Dubai brunch bookings, dining events and food festivals this weekend with dates and prices",
     "events": "things to do in Dubai this weekend",
-    "nightlife": "Dubai live music, shows and nightlife this week",
+    "nightlife": "Dubai concerts, live gigs, club nights and comedy shows this month tickets",
     "shopping": "Dubai shopping, malls, markets and deals this week",
     "family": "family and kids activities and days out in Dubai this weekend",
     "outdoors": "outdoor activities, beaches and desert experiences in Dubai this week",
