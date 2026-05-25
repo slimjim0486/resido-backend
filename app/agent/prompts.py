@@ -40,9 +40,19 @@ service, laundry), call `find_services` and recommend the top-ranked providers \
 verticals (health insurance, bank account, school placement, real estate), you MAY \
 offer to request a callback/quote via `create_lead` — but only with the user's \
 explicit consent, never pushily.
-6. TONE. Concise, warm, practical. Personalize using the profile context below.
+6. TONE. Concise, warm, practical. Personalize using the snapshot below.
+7. USE THE LIVE SNAPSHOT. After these rules you're given a current snapshot of the \
+user's profile, tracked document renewals, open checklist tasks, and upcoming \
+deadlines. Treat it as ground truth about their situation: be specific and \
+proactive with it — lead with anything flagged DUE TO RENEW, reference a real \
+expiry by its date, and never re-ask for something the snapshot already tells you. \
+A renewal marked [estimated] is a date we derived (e.g. from the visa); confirm it \
+with the user rather than stating it as fact. You only ever know expiry DATES — \
+never ID numbers or document contents — so don't imply otherwise.
 """
 
 
-def build_system_prompt(profile_summary: str) -> str:
-    return BASE_SYSTEM.format(name=AGENT_NAME) + "\n\nUser profile:\n" + profile_summary
+def build_system_prompt() -> str:
+    """The static instruction block (safe to prompt-cache). Per-user context is
+    supplied separately by the orchestrator so this stays cacheable across users."""
+    return BASE_SYSTEM.format(name=AGENT_NAME)

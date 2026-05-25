@@ -2,6 +2,7 @@
 
 import json
 from dataclasses import dataclass, field
+from datetime import date
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,7 +12,13 @@ from app.config import settings
 from app.core.logging import get_logger
 from app.models.profile import Profile
 from app.models.user import User
-from app.services.workspace import get_or_create_profile
+from app.services import renewals
+from app.services.workspace import (
+    get_or_create_profile,
+    list_checklist,
+    list_deadlines,
+    list_documents,
+)
 
 logger = get_logger(__name__)
 
@@ -42,6 +49,59 @@ def _profile_summary(profile: Profile) -> str:
     return "; ".join(parts) or "No profile details saved yet."
 
 
+async def _workspace_snapshot(session: AsyncSession, profile: Profile, user_id, *, today: date) -> str:
+    """A compact, date-aware view of the user's situation, injected so the agent
+    can be proactive (lead with what's expiring) instead of re-asking for facts."""
+    documents = await list_documents(session, user_id)
+    checklist = await list_checklist(session, user_id)
+    deadlines = await list_deadlines(session, user_id)
+
+    lines = [
+        f"LIVE SNAPSHOT (as of {today.isoformat()}) — use it proactively; don't re-ask for what's here.",
+        f"Profile: {_profile_summary(profile)}",
+    ]
+
+    if documents:
+        lines.append("Tracked renewals:")
+        for d in documents[:12]:  # already ordered soonest-expiry first
+            if d.expiry_date:
+                n = (d.expiry_date - today).days
+                when = (
+                    f"expired {-n}d ago"
+                    if n < 0
+                    else "expires today"
+                    if n == 0
+                    else f"expires in {n}d ({d.expiry_date.isoformat()})"
+                )
+                due = (
+                    " — DUE TO RENEW"
+                    if renewals.needs_reminder(d.doc_type, d.expiry_date, today=today)
+                    else ""
+                )
+            else:
+                when, due = "no date set", ""
+            est = " [estimated — confirm with user]" if d.confidence == renewals.ESTIMATED else ""
+            lines.append(f"  - {d.title}: {when}{due}{est}")
+    else:
+        lines.append(
+            "Tracked renewals: none yet. If the user mentions any document expiry, offer to "
+            "track it — use set_visa_anchor when they give a visa/Emirates ID date."
+        )
+
+    open_items = [i for i in checklist if i.status != "done"]
+    if open_items:
+        lines.append("Open checklist tasks: " + "; ".join(i.title for i in open_items[:10]))
+
+    upcoming = [d for d in deadlines if d.due_date >= today][:8]
+    if upcoming:
+        lines.append(
+            "Upcoming reminders: "
+            + "; ".join(f"{d.title} ({d.due_date.isoformat()})" for d in upcoming)
+        )
+
+    return "\n".join(lines)
+
+
 async def run_agent(
     session: AsyncSession, user: User, message: str, history: list[dict] | None = None
 ) -> AgentResult:
@@ -60,13 +120,17 @@ async def run_agent(
 
     client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
     profile = await get_or_create_profile(session, user.id)
+    snapshot = await _workspace_snapshot(session, profile, user.id, today=date.today())
 
     system = [
+        # Static instructions — cached across users/turns.
         {
             "type": "text",
-            "text": build_system_prompt(_profile_summary(profile)),
+            "text": build_system_prompt(),
             "cache_control": {"type": "ephemeral"},
-        }
+        },
+        # Per-user live snapshot — uncached (changes as the user's situation does).
+        {"type": "text", "text": snapshot},
     ]
 
     messages: list[dict] = [{"role": m["role"], "content": m["content"]} for m in history]
