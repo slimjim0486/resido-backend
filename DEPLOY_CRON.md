@@ -6,6 +6,7 @@ Two scheduled jobs keep the ingestion moat fresh (see `backend/INGESTION.md`):
 |---|---|---|---|---|
 | **KB refresh** (Tier A) | `scripts/refresh_kb.py` | `railway.refresh-kb.json` | `0 */6 * * *` (every 6h) | Registers the source allowlist, then re-fetches only TTL-elapsed sources. Hash gate skips re-embedding unchanged pages, so most runs are near-free. |
 | **Events feed** (Tier B) | `scripts/seed_events.py` | `railway.seed-events.json` | `0 2 * * *` (06:00 Dubai) | Pulls the lifestyle "What's on" feed. Source precedence: **Apify actor** if `APIFY_EVENTS_ACTOR` set → else **Exa** per-category queries (current default) → else rolling sample set. |
+| **Services refresh** | `scripts/refresh_services.py` | `railway.refresh-services.json` | `0 3 1 * *` (monthly, 1st @ 07:00 Dubai) | Re-scrapes only `(category × area)` grid cells whose freshest provider row has aged past `SERVICES_TTL_DAYS` (30) via the Apify Google Maps actor. Durable rows, slow TTL — a few $/mo, not daily. No-op without `APIFY_TOKEN`. |
 
 > **Schedules are UTC.** Dubai is UTC+4, so `0 2 * * *` fires at 06:00 Dubai — before users wake. Edit `cronSchedule` in the config file to change it.
 
@@ -48,6 +49,8 @@ DATABASE_URL = ${{Postgres.DATABASE_URL}}
 | `APIFY_TOKEN` / `APIFY_EVENTS_ACTOR` | — | optional | if set, a real scraper takes precedence over Exa for events |
 
 > Events-feed precedence: `APIFY_EVENTS_ACTOR` (if set) → **Exa** (default, needs `EXA_API_KEY`) → curated samples.
+
+**Services refresh** (`services-refresh`) needs `DATABASE_URL` + `APIFY_TOKEN` (reuses the same token; actor defaults to `compass/crawler-google-places` via `APIFY_MAPS_ACTOR`). It's monthly and self-limits to TTL-elapsed cells, so cost stays a few $/mo. Without `APIFY_TOKEN` it no-ops (seed once with `scripts/seed_services.py` for curated samples).
 
 `ANTHROPIC_API_KEY`, `REDIS_URL`, `SECRET_KEY`, `CORS_ORIGINS` are **not** needed by either cron — they fall back to safe defaults.
 
