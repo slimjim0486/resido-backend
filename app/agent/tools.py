@@ -11,6 +11,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services import providers as providers_service
 from app.services import workspace
 from app.services.kb import search_kb
 from app.services.live_search import live_search
@@ -109,16 +110,37 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "find_services",
+        "description": "Find ranked local service providers in Dubai (cleaning, AC repair, handyman, plumbing, electrician, movers, pest control, maid service, car service, laundry). Use this when the user needs a home/living service. Returns providers sorted by a trust score (rating weighted by review count).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "description": "cleaning | ac_repair | handyman | plumbing | electrician | movers | pest_control | maid_service | car_service | laundry",
+                },
+                "area": {
+                    "type": "string",
+                    "description": "Optional Dubai area filter, e.g. 'Dubai Marina', 'JLT', 'Business Bay'",
+                },
+            },
+            "required": ["category"],
+        },
+    },
+    {
         "name": "create_lead",
-        "description": "With the user's explicit consent, create a service lead to connect them with a vetted partner.",
+        "description": "With the user's explicit consent, create a service lead to connect them with a vetted partner — including a callback/quote request for a local home-service provider returned by find_services.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "vertical": {
                     "type": "string",
-                    "description": "insurance | banking | schooling | real_estate | telecom | relocation",
+                    "description": "A service category (cleaning, ac_repair, movers, …) or high-value vertical (insurance | banking | schooling | real_estate | telecom | relocation)",
                 },
-                "payload": {"type": "object", "description": "Any details to pass along"},
+                "payload": {
+                    "type": "object",
+                    "description": "Details to pass along, e.g. {provider_name, area, contact_preference, notes}",
+                },
             },
             "required": ["vertical"],
         },
@@ -278,6 +300,35 @@ async def execute_tool(
             {"ok": True, "id": str(d.id)},
             [],
             {"type": "reminder_set", "summary": f"Reminder set: {d.title} on {d.due_date.isoformat()}"},
+        )
+
+    if name == "find_services":
+        items = await providers_service.list_providers(
+            session,
+            category=tool_input["category"],
+            area=tool_input.get("area"),
+            limit=5,
+        )
+        return (
+            {
+                "providers": [
+                    {
+                        "name": p.name,
+                        "area": p.area,
+                        "rating": p.rating,
+                        "reviews_count": p.reviews_count,
+                        "phone": p.phone,
+                        "whatsapp": p.whatsapp,
+                        "website": p.website,
+                    }
+                    for p in items
+                ],
+                "count": len(items),
+                "note": "Ranked by trust score (rating weighted by review count). "
+                "Offer to request a callback/quote via create_lead with the user's consent.",
+            },
+            [],
+            None,
         )
 
     if name == "create_lead":
