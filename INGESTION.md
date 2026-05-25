@@ -147,10 +147,16 @@ the Tier B feed runs alongside it (`railway.seed-events.json`, daily). Setup ste
 wired to the feed with a graceful sample fallback.
 
 **Events source precedence** (`seed_events`): **Apify** (`app/ingestion/events.py`, if `APIFY_EVENTS_ACTOR`
-set) → **Exa** (`app/ingestion/events_exa.py`, current default — one query per lifestyle key, tagged with
-that key so the 6 tiles bucket correctly; lossy on date/venue/price) → curated samples. Exa items are
-current, real, tappable links; cards/detail hide the date pill when there's no date and fall back to the
-source host. **Upgrade path:** a custom Apify actor (or Exa→Claude structured extraction) for true
-per-event date/venue/price.
+set) → **Exa** (`app/ingestion/events_exa.py`, default) → curated samples. One Exa query per lifestyle key,
+tagged with that key so the 6 tiles bucket correctly.
+
+**Exa→Claude structured extraction (built 2026-05-25, on by default).** When `EVENTS_EXTRACT` +
+`ANTHROPIC_API_KEY` are set, each discovered page is read by Claude (`app/ingestion/events_extract.py`,
+Haiku + forced tool-use + prompt caching) into **structured individual events** (real date · venue · price ·
+booking link). `_finalize` synthesizes unique URLs, dedups on (title, date), and drops past / >60-day
+events. Verified: a Shanghai Me brunch article → `{date 2026-06-06, venue Shanghai Me, AED 348}`.
+Falls back to page-as-item links when AI is off (date pill hidden, source host as subtitle). Full design:
+[`backend/EVENTS_EXTRACTION.md`](EVENTS_EXTRACTION.md). Later high-fidelity supplement: a dedicated
+Platinumlist actor/affiliate feed for ticketed events.
 
 Tiers A and B are independent pipelines and can proceed in parallel.

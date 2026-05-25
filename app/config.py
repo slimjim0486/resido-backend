@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     # ─── AI: Claude ───
     ANTHROPIC_API_KEY: str = ""
     CLAUDE_MODEL: str = "claude-sonnet-4-6"
+    # Cheaper/faster model for high-volume structured extraction (events feed).
+    CLAUDE_EXTRACT_MODEL: str = "claude-haiku-4-5"
 
     # ─── Embeddings ───
     EMBEDDINGS_PROVIDER: str = "voyage"  # voyage | openai
@@ -53,6 +55,9 @@ class Settings(BaseSettings):
     # Apify actor that scrapes the lifestyle events feed (Tier B), e.g.
     # "<username>/dubai-events-scraper". Unset → seed uses curated samples.
     APIFY_EVENTS_ACTOR: str = ""
+    # Exa→Claude structured event extraction (Tier B+, see EVENTS_EXTRACTION.md).
+    EVENTS_EXTRACT: bool = True
+    EVENTS_EXTRACT_MAX_PAGES: int = 3  # pages/category sent to Claude
 
     # ─── CORS ───
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8080"
