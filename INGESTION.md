@@ -88,6 +88,58 @@ served directly to Home hero · cached to each event's end date (self-expiring)
 
 ---
 
+## 4b. Services — local provider directory (Tier A-style, monetization surface)
+
+Powers the **Services vertical** — Resido's lead-gen surface (`SPEC.md` §1 monetization).
+High-intent local providers (cleaning, AC repair, handyman, movers, …), discoverable, ranked,
+with a callback/quote CTA. **No embeddings, no RAG** — structured rows, like Tier B — but modeled
+on **Tier A economics**: a *bounded grid, slow TTL, durable rows*, the opposite of the churny feed.
+
+```
+for (category × area) in a bounded grid      ── ~10 cats × ~10 areas = ~100 cells
+        │
+        ▼
+Apify compass/crawler-google-places   ── 1 run/cell, MONTHLY (only TTL-elapsed cells)
+        │
+        ▼
+normalize defensively → Bayesian score → upsert service_providers (key: place_id)
+        │
+        ▼
+served via GET /api/v1/services?category=&area=  ·  ranked score desc (google_rank tiebreaker)
+```
+
+- **Why Apify (not Exa) here:** Google Maps is the canonical, structured source for local businesses
+  (rating, review count, phone, hours, geo) and is JS-hard/anti-bot — exactly Tier 2's "structured/recurring
+  scrape" lane. The off-the-shelf `compass/crawler-google-places` actor is used via the existing
+  `apify_client.run_actor` (reuses `APIFY_TOKEN`; actor configurable via `APIFY_MAPS_ACTOR`).
+- **Bounded grid = the cost lever.** The (category × area) registry (`app/ingestion/services_registry.py`)
+  is finite. `SERVICES_PER_CELL` (~15) caps places/cell. ~100 cells × ~15 ≈ 1.5k places **once a month** at
+  ~$4/1k — a few dollars/month, cached as durable rows. Not daily; that's the whole point.
+- **TTL refresh, Tier-A style.** `scripts/refresh_services.py` re-scrapes only cells whose freshest row has
+  aged past `SERVICES_TTL_DAYS` (30) — cell freshness is read straight off `max(fetched_at)` per
+  `(category, area)` (`providers.cell_freshness`), so there's no separate bookkeeping table. Wired to a
+  **monthly** Railway cron (`railway.refresh-services.json`, `0 3 1 * *`). Seed/refresh both reuse `APIFY_TOKEN`.
+- **Ranking — Bayesian trust score.** `score = (v/(v+m))·R + (m/(v+m))·C` (m=20, C=4.2), computed on upsert,
+  so a 5.0-from-6-reviews can't outrank a 4.6-from-800. Default sort is `score` desc; `google_rank` (scrape
+  order) is the tiebreaker. `rating` + `reviews_count` are surfaced as the trust signal.
+- **Defensive normalize.** Maps actor field names vary; `providers_maps.normalize` maps many candidate keys
+  (`totalScore`/`rating`, `reviewsCount`/`reviews`, `location{lat,lng}`/`lat`+`lng`, …) and derives a
+  wa.me-ready WhatsApp number from UAE *mobiles* only. Per-cell `try/except` so one bad query can't sink the run.
+- **Demoable offline.** `scripts/seed_services.py` falls back to a curated sample set when `APIFY_TOKEN` is
+  unset (like `seed_events.py`); `--dry-run --category --area` scrapes one cell and prints normalized+scored
+  rows with **no DB write** (the read-only validation pattern).
+- **Agent + monetization.** `find_services(category, area)` returns the top ranked providers to the co-pilot;
+  `create_lead` accepts a service category + provider context so the agent can offer a callback/quote → `leads`.
+
+**Shipped 2026-05-25:** `service_providers` table + migration `0004_service_providers`; `app/services/providers.py`
+(upsert/list + Bayesian score + `cell_freshness`); `app/ingestion/providers_maps.py` + `services_registry.py`;
+public `GET /api/v1/services`; `find_services` agent tool; `scripts/seed_services.py` + `scripts/refresh_services.py`
++ monthly cron. Verified read-only: an `ac_repair × Dubai Marina` dry run returned 15 providers with real
+place_ids, hours, derived WhatsApp numbers, and correct Bayesian ranking. (`apify_client.run_actor` also fixed to
+swap `username/actor` → `username~actor` for the REST path.)
+
+---
+
 ## 5. Tier C — Live on-demand (the long tail + "latest" safety valve)
 
 When the agent's `kb_search` misses, don't fail or hallucinate:
@@ -125,6 +177,7 @@ Redis cache result by query (hours)   ·   if source is authoritative + reusable
 | 5 | A | TTL staggered refresh worker + source allowlist | ✅ done |
 | 6 | B | `events` table + Apify lifestyle feed → Home hero | ✅ done |
 | 7 | C | On-demand Exa search + KB promotion in agent | ✅ done |
+| 8 | Services | Apify Google Maps grid → `service_providers` directory + lead-gen | ✅ done |
 
 **Tier C shipped (2026-05-25):** `app/services/live_search.py` — when `kb_search` returns nothing,
 the tool transparently falls back to a cached (Redis, 6h) just-in-time Exa search; results are flagged
