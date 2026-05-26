@@ -8,7 +8,7 @@ with the Google Maps scrape order kept as a tiebreaker.
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.pricing import parse_aed
@@ -49,6 +49,7 @@ async def list_providers(
     *,
     category: str | None = None,
     area: str | None = None,
+    area_soft: bool = False,
     min_rating: float | None = None,
     query: str | None = None,
     max_price: float | None = None,
@@ -58,6 +59,12 @@ async def list_providers(
     order as tiebreaker), behind optional filters:
 
     - ``category`` exact grid key; ``area`` substring match on the neighbourhood.
+    - ``area_soft`` changes ``area`` from a hard filter into a ranking boost: in-area
+      providers float to the top, but the city-wide pool still fills the rest. This
+      is what the agent uses — home services travel to you, so an off-grid request
+      (an area outside the scraped grid) should still return the best providers who
+      can come out, not an empty list. The browse UI keeps the strict filter (the
+      user explicitly chose that area), so this defaults off.
     - ``min_rating`` floors the raw Google rating (unrated rows drop).
     - ``query`` substring match on the business name.
     - ``max_price`` keeps providers whose advertised ``price_from`` is at or under
@@ -68,16 +75,24 @@ async def list_providers(
     stmt = select(ServiceProvider).where(ServiceProvider.is_active.is_(True))
     if category:
         stmt = stmt.where(ServiceProvider.category == category)
-    if area:
-        stmt = stmt.where(ServiceProvider.area.ilike(f"%{area.strip()}%"))
     if min_rating is not None:
         stmt = stmt.where(ServiceProvider.rating >= min_rating)
     if query and query.strip():
         stmt = stmt.where(ServiceProvider.name.ilike(f"%{query.strip()}%"))
-    stmt = stmt.order_by(
+
+    order_by = []
+    if area and area.strip():
+        area_match = ServiceProvider.area.ilike(f"%{area.strip()}%")
+        if area_soft:
+            # Boost, don't exclude: in-area rows sort first, then trust-ranked rest.
+            order_by.append(case((area_match, 0), else_=1))
+        else:
+            stmt = stmt.where(area_match)
+    order_by += [
         ServiceProvider.score.desc(),
         ServiceProvider.google_rank.asc().nullslast(),
-    )
+    ]
+    stmt = stmt.order_by(*order_by)
     # Over-fetch when budget-filtering in Python so we can still fill `limit`.
     stmt = stmt.limit(limit * 4 if max_price is not None else limit)
     rows = list((await session.execute(stmt)).scalars().all())

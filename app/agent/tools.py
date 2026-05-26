@@ -586,6 +586,7 @@ async def execute_tool(
             session,
             category=tool_input["category"],
             area=tool_input.get("area"),
+            area_soft=True,
             min_rating=tool_input.get("min_rating"),
             max_price=tool_input.get("max_price_aed"),
             limit=limit,
@@ -612,9 +613,12 @@ async def execute_tool(
                     for p in items
                 ],
                 "count": len(items),
-                "note": "Ranked by trust score (rating weighted by review count). Lead with the rating + "
-                "review count as the trust signal and mention the advertised price when present (say so "
-                "when it isn't). Offer to request a callback/quote via create_lead with the user's consent.",
+                "note": "Ranked by trust score (rating weighted by review count). Don't dump the list — "
+                "lead with the single best pick (1-2 max), giving its rating + review count as the trust "
+                "signal and the advertised price when present (say so when it isn't). Area is a soft boost, "
+                "not a filter: results may sit outside the user's exact area (home services travel) — if so, "
+                "say the provider covers/comes out to their area rather than implying it's local. Then drive "
+                "to the action: offer to request a callback/quote via create_lead with the user's consent.",
             },
             [],
             None,
