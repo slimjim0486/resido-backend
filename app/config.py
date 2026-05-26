@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     # Exa→Claude structured event extraction (Tier B+, see EVENTS_EXTRACTION.md).
     EVENTS_EXTRACT: bool = True
     EVENTS_EXTRACT_MAX_PAGES: int = 3  # pages/category sent to Claude
+    # Undated event/listicle rows are temporary feed items; if a source cannot
+    # prove when something ends, keep it fresh for this many days only.
+    EVENTS_UNDATED_TTL_DAYS: int = 14
+    # Physical cleanup keeps a short audit/debug window after events disappear
+    # from the app via expires_at.
+    EVENTS_EXPIRED_RETENTION_DAYS: int = 30
     # Off-the-shelf Apify Google Maps actor that powers the Services vertical
     # (Tier A-style durable provider rows; see backend/INGESTION.md). Reuses
     # APIFY_TOKEN — no new secret. Unset/blank → seed uses curated samples.

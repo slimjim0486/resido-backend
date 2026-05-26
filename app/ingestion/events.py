@@ -102,8 +102,13 @@ def normalize(item: dict, *, source: str, default_category: str = "events") -> d
     starts_at = _parse_dt(_first(item, "startDate", "start", "starts_at", "dateStart"))
     ends_at = _parse_dt(_first(item, "endDate", "end", "ends_at", "dateEnd"))
     # Self-expiry: keep showing until a day after it ends (or starts, if no end).
+    # If the source gives no date at all, treat it as a temporary feed item.
     horizon = ends_at or starts_at
-    expires_at = horizon + timedelta(days=1) if horizon else None
+    expires_at = (
+        horizon + timedelta(days=1)
+        if horizon
+        else datetime.now(timezone.utc) + timedelta(days=settings.EVENTS_UNDATED_TTL_DAYS)
+    )
 
     category = str(_first(item, "category", "type") or default_category).lower()[:80]
     description = _first(item, "description", "summary", "snippet")

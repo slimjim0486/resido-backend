@@ -62,7 +62,7 @@ def _snippet(text: str | None, limit: int = 240) -> str | None:
     return s[: s[:limit].rfind(" ")] + "…" if len(s) > limit else s
 
 
-def _to_event(r: dict, category: str, *, ttl_days: int = 14) -> dict | None:
+def _to_event(r: dict, category: str, *, ttl_days: int | None = None) -> dict | None:
     url = r.get("url")
     title = (r.get("title") or "").strip()
     if not url or not title:
@@ -79,8 +79,10 @@ def _to_event(r: dict, category: str, *, ttl_days: int = 14) -> dict | None:
         "price_min": None,
         "family_friendly": infer_family_friendly(category, title, description),
         "starts_at": None,  # guides/listicles aren't single dated events
-        # Rotate roughly weekly: re-ingested pages refresh this, stale ones expire.
-        "expires_at": datetime.now(timezone.utc) + timedelta(days=ttl_days),
+        # Re-ingested pages refresh this, stale ones expire.
+        "expires_at": datetime.now(timezone.utc) + timedelta(
+            days=ttl_days or settings.EVENTS_UNDATED_TTL_DAYS
+        ),
         "is_published": True,
     }
 
@@ -100,7 +102,11 @@ def _finalize(raw: dict, page: dict, category: str) -> dict | None:
     booking = raw.get("booking_url")
     url = booking if _valid_http(booking) else f"{page['url']}#{_slug(title)}"
     horizon = ends_at or starts_at
-    expires_at = (horizon + timedelta(days=1)) if horizon else now + timedelta(days=14)
+    expires_at = (
+        horizon + timedelta(days=1)
+        if horizon
+        else now + timedelta(days=settings.EVENTS_UNDATED_TTL_DAYS)
+    )
     description = raw.get("description") or None
     price_from = raw.get("price_from") or None
     # Prefer Claude's explicit family verdict; fall back to the shared heuristic.

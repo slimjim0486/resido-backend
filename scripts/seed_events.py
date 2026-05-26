@@ -118,6 +118,13 @@ async def main() -> None:
                 "No EXA_API_KEY or Apify actor configured — "
                 f"inserted {n} curated sample events so the feed is demoable."
             )
+        deleted = await events_service.delete_expired_events(
+            session, retention_days=settings.EVENTS_EXPIRED_RETENTION_DAYS
+        )
+        print(
+            "Expired event cleanup: deleted "
+            f"{deleted} row(s) older than {settings.EVENTS_EXPIRED_RETENTION_DAYS} day(s)."
+        )
 
 
 if __name__ == "__main__":

@@ -5,9 +5,9 @@ Events are deliberately NOT embedded, so free-text search here is keyword
 a small, time-bound feed: cheap, exact, and no stale vectors to maintain.
 """
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.event import Event
@@ -155,3 +155,17 @@ async def upsert_events(session: AsyncSession, items: list[dict]) -> int:
             inserted += 1
     await session.commit()
     return inserted
+
+
+async def delete_expired_events(session: AsyncSession, *, retention_days: int = 30) -> int:
+    """Physically remove events that have been hidden past the retention window.
+
+    Visibility is controlled by ``expires_at`` in queries; this cleanup is only
+    for storage hygiene after a short debugging/audit window.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    result = await session.execute(
+        delete(Event).where(Event.expires_at.is_not(None), Event.expires_at < cutoff)
+    )
+    await session.commit()
+    return result.rowcount or 0
