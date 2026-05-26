@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import events as events_service
 from app.services import providers as providers_service
+from app.services import quotes as quotes_service
 from app.services import workspace
 from app.services.advanced_search import advanced_search
 from app.services.kb import search_kb
@@ -274,20 +275,44 @@ TOOLS: list[dict] = [
     },
     {
         "name": "create_lead",
-        "description": "With the user's explicit consent, create a service lead to connect them with a vetted partner — including a callback/quote request for a local home-service provider returned by find_services.",
+        "description": (
+            "Capture a high-intent lead with the user's explicit consent. Two modes. "
+            "MODE 1 — specific provider: pass the `provider_id` from a find_services result plus a short "
+            "`need` (e.g. 'shower drain cleaning'). This drafts a WhatsApp/SMS message the USER sends "
+            "themselves and returns the provider's verified contact — it does NOT contact the provider for "
+            "them, so never say it was 'sent' or that they'll be called. "
+            "MODE 2 — high-value vertical with no specific provider yet (insurance | banking | schooling | "
+            "real_estate | telecom | relocation): pass `vertical` (and optional `payload` notes). "
+            "Never invent provider contact details; they only come from this tool or find_services."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
+                "provider_id": {
+                    "type": "string",
+                    "description": "MODE 1: the `id` of a provider returned by find_services to request a quote from.",
+                },
+                "need": {
+                    "type": "string",
+                    "description": "MODE 1: short description of the job, e.g. 'fix shower drainage'. Required with provider_id.",
+                },
+                "when_pref": {
+                    "type": "string",
+                    "description": "MODE 1: optional preferred timing, e.g. 'this weekend', 'asap'.",
+                },
+                "budget_aed": {
+                    "type": "integer",
+                    "description": "MODE 1: optional budget in AED.",
+                },
                 "vertical": {
                     "type": "string",
-                    "description": "A service category (cleaning, ac_repair, movers, …) or high-value vertical (insurance | banking | schooling | real_estate | telecom | relocation)",
+                    "description": "MODE 2: a high-value vertical (insurance | banking | schooling | real_estate | telecom | relocation).",
                 },
                 "payload": {
                     "type": "object",
-                    "description": "Details to pass along, e.g. {provider_name, area, contact_preference, notes}",
+                    "description": "MODE 2: details to pass along, e.g. {area, contact_preference, notes}.",
                 },
             },
-            "required": ["vertical"],
         },
     },
 ]
@@ -595,6 +620,7 @@ async def execute_tool(
             {
                 "providers": [
                     {
+                        "id": str(p.id),
                         "name": p.name,
                         "area": p.area,
                         "rating": p.rating,
@@ -618,20 +644,96 @@ async def execute_tool(
                 "signal and the advertised price when present (say so when it isn't). Area is a soft boost, "
                 "not a filter: results may sit outside the user's exact area (home services travel) — if so, "
                 "say the provider covers/comes out to their area rather than implying it's local. Then drive "
-                "to the action: offer to request a callback/quote via create_lead with the user's consent.",
+                "to the action: offer to draft a quote via create_lead (pass the chosen provider's `id` and a "
+                "short `need`) with the user's consent — this drafts a message they send themselves; it does "
+                "NOT contact the provider for them. Only quote a provider's phone/website using the values in "
+                "this result; never invent contact details.",
             },
             [],
             None,
         )
 
     if name == "create_lead":
+        provider_id_raw = tool_input.get("provider_id")
+        if provider_id_raw:
+            # MODE 1 — quote draft for a specific provider. Contact is loaded
+            # server-side so the agent can never invent it.
+            try:
+                provider_id = UUID(provider_id_raw)
+            except (ValueError, TypeError):
+                return {"ok": False, "error": "invalid provider_id"}, [], None
+            provider = await providers_service.get_provider(session, provider_id)
+            if provider is None:
+                return (
+                    {"ok": False, "error": "provider not found — call find_services to get a current provider_id"},
+                    [],
+                    None,
+                )
+            need = (tool_input.get("need") or "").strip()
+            if not need:
+                return (
+                    {"ok": False, "error": "need is required with provider_id — a short description of the job"},
+                    [],
+                    None,
+                )
+            budget = tool_input.get("budget_aed")
+            result = await quotes_service.draft_quote(
+                session,
+                user_id,
+                provider=provider,
+                need=need,
+                when_pref=tool_input.get("when_pref"),
+                budget_aed=int(budget) if budget is not None else None,
+            )
+            return (
+                {
+                    "ok": True,
+                    "lead_id": str(result["lead_id"]),
+                    "draft_message": result["message"],
+                    "channel": result["channel"],  # whatsapp | sms | none
+                    "to_number": result["to_number"],
+                    "provider": {
+                        "name": provider.name,
+                        "phone": provider.phone,
+                        "whatsapp": provider.whatsapp,
+                        "website": provider.website,
+                    },
+                    "note": (
+                        "Lead logged (demand signal). NOTHING was sent to the provider and no callback is "
+                        "scheduled. Present `draft_message` as a message the user sends THEMSELVES via "
+                        "`channel` (e.g. 'Here's a message you can send to {provider} on WhatsApp — tap to "
+                        "send'). Do NOT say 'sent', 'submitted', or 'they'll reach out/call you'. Share ONLY "
+                        "the contact in this result (to_number, provider.phone/whatsapp/website) — never "
+                        "invent or guess a number, email, or website. If channel is 'none', say there's no "
+                        "direct number on file and offer the website only if present."
+                    ),
+                },
+                [],
+                {"type": "lead_created", "summary": f"Drafted your message to {provider.name} — tap to send"},
+            )
+
+        # MODE 2 — high-value vertical with no specific provider yet.
+        vertical = (tool_input.get("vertical") or "").strip()
+        if not vertical:
+            return (
+                {"ok": False, "error": "pass provider_id (a find_services provider) or vertical (a high-value lead)"},
+                [],
+                None,
+            )
         lead = await workspace.create_lead(
-            session, user_id, vertical=tool_input["vertical"], payload=tool_input.get("payload") or {}
+            session, user_id, vertical=vertical, payload=tool_input.get("payload") or {}
         )
         return (
-            {"ok": True, "id": str(lead.id)},
+            {
+                "ok": True,
+                "id": str(lead.id),
+                "note": (
+                    "Lead recorded. Don't claim a message was sent to any business or promise a specific "
+                    "callback time, and don't state any phone/email/website you didn't get from a tool result."
+                ),
+            },
             [],
-            {"type": "lead_created", "summary": f"Connecting you with a {lead.vertical} partner"},
+            {"type": "lead_created", "summary": f"Logged your {lead.vertical} request"},
         )
 
     return {"ok": False, "error": f"unknown tool {name}"}, [], None
