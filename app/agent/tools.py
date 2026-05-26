@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import providers as providers_service
 from app.services import workspace
+from app.services.advanced_search import advanced_search
 from app.services.kb import search_kb
 from app.services.live_search import live_search
 
@@ -29,6 +30,42 @@ TOOLS: list[dict] = [
                 "category": {
                     "type": "string",
                     "description": "Optional category filter, e.g. visa, insurance, housing, transport, banking, schooling",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "advanced_search",
+        "description": (
+            "Advanced multi-source search for broad, current, comparative, or underspecified Dubai questions. "
+            "Use this when one KB query is unlikely to be enough, when the user asks for latest/current information, "
+            "or when you need several official-source angles. It combines verified KB results with optional live web results."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Primary natural-language search query"},
+                "queries": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional alternate query angles or synonyms, max 4 total including query",
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Optional category filter, e.g. visa, insurance, housing, transport, banking, schooling",
+                },
+                "include_live": {
+                    "type": "boolean",
+                    "description": "Whether to include live web results if KB coverage is thin. Default true.",
+                },
+                "official_only": {
+                    "type": "boolean",
+                    "description": "Restrict live web results to trusted official UAE/Dubai domains. Use for legal, fee, visa, deadline, or government-process questions.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum deduped results to return, 3-12. Default 8.",
                 },
             },
             "required": ["query"],
@@ -250,6 +287,29 @@ async def execute_tool(
                 "against the official source before acting on fees/legal/deadline details."
             )
         return {"results": results, "count": len(results), "source_note": source_note}, citations, None
+
+    if name == "advanced_search":
+        result = await advanced_search(
+            session,
+            tool_input["query"],
+            queries=tool_input.get("queries"),
+            category=tool_input.get("category"),
+            limit=tool_input.get("limit"),
+            include_live=tool_input.get("include_live", True),
+            official_only=tool_input.get("official_only", False),
+        )
+        return (
+            {
+                "results": result["results"],
+                "count": result["count"],
+                "verified_count": result["verified_count"],
+                "live_count": result["live_count"],
+                "queries": result["queries"],
+                "source_note": result["source_note"],
+            },
+            result["citations"],
+            None,
+        )
 
     if name == "get_profile":
         p = await workspace.get_or_create_profile(session, user_id)

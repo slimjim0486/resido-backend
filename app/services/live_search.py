@@ -29,17 +29,17 @@ _CACHE_TTL_SECONDS = 6 * 3600  # repeat questions are free for 6h
 # Domains trusted enough to promote into the verified KB. Everything else can be
 # shown as a live result but is never auto-ingested.
 _GOV_SUFFIX = ".gov.ae"
-_AUTHORITATIVE_HOSTS = {
+AUTHORITATIVE_HOSTS = {
     "u.ae", "rta.ae", "centralbank.ae", "dha.gov.ae", "mohap.gov.ae",
     "mohre.gov.ae", "khda.gov.ae", "gdrfa.gov.ae", "icp.gov.ae", "dewa.gov.ae",
 }
 
 
-def _is_authoritative(url: str) -> bool:
+def is_authoritative_url(url: str) -> bool:
     host = (urlparse(url).hostname or "").lower()
     if host.endswith(_GOV_SUFFIX):
         return True
-    return host in _AUTHORITATIVE_HOSTS or any(host.endswith("." + h) for h in _AUTHORITATIVE_HOSTS)
+    return host in AUTHORITATIVE_HOSTS or any(host.endswith("." + h) for h in AUTHORITATIVE_HOSTS)
 
 
 async def live_search(
@@ -48,10 +48,15 @@ async def live_search(
     *,
     category: str | None = None,
     num_results: int = 4,
+    include_domains: list[str] | None = None,
+    authoritative_only: bool = False,
 ) -> list[dict]:
     """Cached just-in-time Exa search. Returns KB-tool-shaped result dicts marked
     ``verified: False``; promotes authoritative hits into ``sources``."""
-    cache_key = _CACHE_PREFIX + hashlib.sha256(f"{category}:{query}".encode()).hexdigest()
+    domains_key = ",".join(sorted(include_domains or []))
+    cache_key = _CACHE_PREFIX + hashlib.sha256(
+        f"{category}:{query}:{domains_key}:{authoritative_only}".encode()
+    ).hexdigest()
     redis = get_redis()
     if redis is not None:
         try:
@@ -62,7 +67,12 @@ async def live_search(
             logger.warning("livesearch_cache_read_failed", error=str(exc))
 
     try:
-        hits = await exa_client.search(query, num_results=num_results, with_text=True)
+        hits = await exa_client.search(
+            query,
+            num_results=num_results,
+            include_domains=include_domains,
+            with_text=True,
+        )
     except Exception as exc:  # no key / network — degrade to "nothing found"
         logger.warning("livesearch_failed", error=str(exc))
         return []
@@ -72,6 +82,8 @@ async def live_search(
     for hit in hits:
         text = (hit.get("text") or "").strip()
         if not text:
+            continue
+        if authoritative_only and not is_authoritative_url(hit["url"]):
             continue
         results.append(
             {
@@ -102,7 +114,7 @@ async def _promote_authoritative(
     promoted = 0
     for r in results:
         url = r["url"]
-        if not _is_authoritative(url):
+        if not is_authoritative_url(url):
             continue
         existing = (
             await session.execute(select(Source).where(Source.url == url))
