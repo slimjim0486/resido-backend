@@ -95,6 +95,9 @@ class Settings(BaseSettings):
     # Retire a provider after it's missed this many days of scrapes (≈ 2 monthly
     # cycles) — soft-hides stale/closed listings without dropping ranking-noise.
     SERVICES_STALE_GRACE_DAYS: int = 60
+    # Daily cleanup removes only high-confidence cross-source duplicates. Events
+    # are deleted; providers are soft-hidden to preserve durable attribution.
+    DEDUPLICATOR_CONFIDENCE_THRESHOLD: float = 0.90
 
     # ─── Object storage: Cloudflare R2 (scraped-image mirroring) ───
     # Scraped image URLs (Google Maps photos, ticket-site images) are short-lived

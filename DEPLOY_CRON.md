@@ -1,12 +1,13 @@
-# Railway cron jobs — KB refresh & events feed
+# Railway cron jobs — KB refresh, feeds, and maintenance
 
-Two scheduled jobs keep the ingestion moat fresh (see `backend/INGESTION.md`):
+Scheduled jobs keep the ingestion moat fresh and clean (see `backend/INGESTION.md`):
 
 | Job | Script | Config file | Default schedule (UTC) | What it does |
 |---|---|---|---|---|
 | **KB refresh** (Tier A) | `scripts/refresh_kb.py` | `railway.refresh-kb.json` | `0 */6 * * *` (every 6h) | Registers the source allowlist, then re-fetches only TTL-elapsed sources. Hash gate skips re-embedding unchanged pages, so most runs are near-free. |
 | **Events feed** (Tier B) | `scripts/seed_events.py` | `railway.seed-events.json` | `0 2 * * *` (06:00 Dubai) | Pulls the lifestyle "What's on" feed. Source precedence: **Apify actor** if `APIFY_EVENTS_ACTOR` set → else **Exa** per-category queries (current default) → else rolling sample set. |
 | **Services refresh** | `scripts/refresh_services.py` | `railway.refresh-services.json` | `0 3 1 * *` (monthly, 1st @ 07:00 Dubai) | Re-scrapes only `(category × area)` grid cells whose freshest provider row has aged past `SERVICES_TTL_DAYS` (30) via the Apify Google Maps actor. Durable rows, slow TTL — a few $/mo, not daily. No-op without `APIFY_TOKEN`. |
+| **Deduplicator** | `scripts/deduplicate.py` | `railway.deduplicate.json` | `0 4 * * *` (08:00 Dubai) | Scores live events and active providers for cross-source duplicates. Removes only pairs at `DEDUPLICATOR_CONFIDENCE_THRESHOLD` or higher (default `0.90`). Events are deleted; providers are soft-hidden (`is_active=false`) to preserve durable attribution. |
 
 > **Schedules are UTC.** Dubai is UTC+4, so `0 2 * * *` fires at 06:00 Dubai — before users wake. Edit `cronSchedule` in the config file to change it.
 
@@ -22,13 +23,15 @@ Both jobs depend on the schema already existing — migrations run from the **we
 
 ## Setup (dashboard, one-time)
 
-Do this **twice** — once per job — in the same Railway project as `resido-backend`:
+Do this once per cron service in the same Railway project as `resido-backend`:
 
-1. **New → Empty Service** (or **GitHub Repo** → pick `resido-backend`). Name it `kb-refresh` / `events-feed`.
+1. **New → Empty Service** (or **GitHub Repo** → pick `resido-backend`). Name it `kb-refresh` / `events-feed` / `services-refresh` / `deduplicator`.
 2. **Settings → Source:** point at the same repo/branch as the web service.
 3. **Settings → Config-as-code → Railway Config File:** set the path:
    - `kb-refresh` → `railway.refresh-kb.json`
    - `events-feed` → `railway.seed-events.json`
+   - `services-refresh` → `railway.refresh-services.json`
+   - `deduplicator` → `railway.deduplicate.json`
 4. **Variables:** give the service the env it needs (see below). Easiest is **project Shared Variables** referenced from all three services.
 5. **Deploy.** Confirm **Settings → Cron Schedule** now shows the value from the config file, and the build uses the right start command.
 
@@ -51,6 +54,8 @@ DATABASE_URL = ${{Postgres.DATABASE_URL}}
 > Events-feed precedence: `APIFY_EVENTS_ACTOR` (if set) → **Exa** (default, needs `EXA_API_KEY`) → curated samples.
 
 **Services refresh** (`services-refresh`) needs `DATABASE_URL` + `APIFY_TOKEN` (reuses the same token; actor defaults to `compass/crawler-google-places` via `APIFY_MAPS_ACTOR`). It's monthly and self-limits to TTL-elapsed cells, so cost stays a few $/mo. Without `APIFY_TOKEN` it no-ops (seed once with `scripts/seed_services.py` for curated samples).
+
+**Deduplicator** (`deduplicator`) needs only `DATABASE_URL`. Optionally set `DEDUPLICATOR_CONFIDENCE_THRESHOLD` if you want a stricter threshold than `0.90`. Run `python -m scripts.deduplicate --dry-run` manually first to inspect confidence reasons before enabling the cron.
 
 `ANTHROPIC_API_KEY`, `REDIS_URL`, `SECRET_KEY`, `CORS_ORIGINS` are **not** needed by either cron — they fall back to safe defaults.
 
@@ -88,6 +93,7 @@ railway up --service events-feed
 - **Logs** should show:
   - `kb-refresh`: `Registry: N new source(s)` then `Refresh: due=… re-embedded=… unchanged/empty=… failed=…`
   - `events-feed`: `Apify (...): inserted N` or `inserted N curated sample events`.
+  - `deduplicator`: `Deduplicator (APPLIED): checked …` and one line per removed duplicate with its confidence and score components.
 
 ## Tuning
 - **Cost too high?** Lower `refresh_kb` frequency (e.g. `0 */12 * * *`) — TTLs are in days, so 6–12h is plenty. `--limit` caps sources per run as the registry grows from Tier C promotion.
