@@ -33,12 +33,16 @@ _DOWNLOAD_TIMEOUT = 30.0
 _UPLOAD_TIMEOUT = 30.0
 _CONCURRENCY = 8  # parallel mirrors per batch
 # A browser-y UA so hotlink-protective CDNs (Google, ticket sites) serve us.
+# Accept advertises ONLY jpeg/png (not avif/webp): content-negotiating CDNs then
+# serve a format Flutter's built-in image codec can decode — Flutter can't render
+# AVIF, so advertising it gets us undisplayable cards. `*/*;q=0.8` keeps
+# non-negotiating servers from 406-ing (they just send their default).
 _DOWNLOAD_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
     ),
-    "Accept": "image/avif,image/webp,image/png,image/jpeg,*/*;q=0.8",
+    "Accept": "image/jpeg,image/png,*/*;q=0.8",
 }
 
 # Leading magic bytes → content-type, for CDNs that mislabel or omit Content-Type.

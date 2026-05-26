@@ -50,6 +50,9 @@ async def search(
                 "title": r.get("title"),
                 "text": (r.get("text") or "") if with_text else "",
                 "published_date": r.get("publishedDate"),
+                # Exa surfaces a representative image (the page's og:image) per
+                # result; the events feed uses it so cards aren't all gradients.
+                "image": r.get("image"),
             }
             for r in resp.json().get("results", [])
             if r.get("url")

@@ -16,8 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.logging import get_logger
-from app.ingestion import exa_client
-from app.ingestion.events import _parse_dt
+from app.ingestion import exa_client, r2_storage
+from app.ingestion.events import _image_key, _parse_dt
 from app.ingestion.events_extract import extract_events
 from app.services import events as events_service
 
@@ -71,6 +71,7 @@ def _to_event(r: dict, category: str, *, ttl_days: int = 14) -> dict | None:
         "description": _snippet(r.get("text")),
         "category": category,
         "url": url,
+        "image_url": r.get("image"),  # Exa's og:image; mirrored to R2 before upsert
         "source": _host(url) or "exa",
         "starts_at": None,  # guides/listicles aren't single dated events
         # Rotate roughly weekly: re-ingested pages refresh this, stale ones expire.
@@ -102,6 +103,9 @@ def _finalize(raw: dict, page: dict, category: str) -> dict | None:
         "venue": raw.get("venue"),
         "area": raw.get("area"),
         "url": url[:1024],
+        # Events extracted from one page share that page's Exa image (no
+        # per-event art exists); better than a gradient. Mirrored to R2 below.
+        "image_url": page.get("image"),
         "price_from": (raw.get("price_from") or None),
         "starts_at": starts_at,
         "ends_at": ends_at,
@@ -167,6 +171,8 @@ async def ingest_exa_events(
         else:
             rows = [e for e in (_to_event(r, key) for r in results) if e]
 
+        # Re-host Exa's images in R2 before persisting (stable URLs, no expiry).
+        await r2_storage.mirror_field(rows, src_field="image_url", key_fn=_image_key)
         n = await events_service.upsert_events(session, rows)
         inserted += n
         logger.info(
