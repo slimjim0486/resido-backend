@@ -23,6 +23,13 @@ class Citation(BaseModel):
 class AgentAction(BaseModel):
     type: str
     summary: str
+    # Populated only for a quote-draft lead so the chat UI can offer a one-tap
+    # send (WhatsApp/SMS) the user fires from their own phone. Contact is loaded
+    # server-side, never model-supplied.
+    channel: str | None = None  # "whatsapp" | "sms" | "none"
+    to_number: str | None = None
+    message: str | None = None
+    provider_name: str | None = None
 
 
 class ChatResponse(BaseModel):

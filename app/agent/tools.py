@@ -700,16 +700,24 @@ async def execute_tool(
                     },
                     "note": (
                         "Lead logged (demand signal). NOTHING was sent to the provider and no callback is "
-                        "scheduled. Present `draft_message` as a message the user sends THEMSELVES via "
-                        "`channel` (e.g. 'Here's a message you can send to {provider} on WhatsApp — tap to "
-                        "send'). Do NOT say 'sent', 'submitted', or 'they'll reach out/call you'. Share ONLY "
-                        "the contact in this result (to_number, provider.phone/whatsapp/website) — never "
-                        "invent or guess a number, email, or website. If channel is 'none', say there's no "
-                        "direct number on file and offer the website only if present."
+                        "scheduled. The app shows a 'Send on WhatsApp'/'Send via SMS' button under your "
+                        "reply that opens `draft_message` pre-filled — so just tell the user you've drafted "
+                        "a message to {provider} and they can tap to send it themselves. Do NOT say 'sent', "
+                        "'submitted', or 'they'll reach out/call you'. Share ONLY the contact in this result "
+                        "(to_number, provider.phone/whatsapp/website) — never invent or guess a number, "
+                        "email, or website. If channel is 'none', say there's no direct number on file and "
+                        "offer the website only if present."
                     ),
                 },
                 [],
-                {"type": "lead_created", "summary": f"Drafted your message to {provider.name} — tap to send"},
+                {
+                    "type": "lead_created",
+                    "summary": f"Quote drafted for {provider.name}",
+                    "channel": result["channel"],
+                    "to_number": result["to_number"],
+                    "message": result["message"],
+                    "provider_name": provider.name,
+                },
             )
 
         # MODE 2 — high-value vertical with no specific provider yet.
