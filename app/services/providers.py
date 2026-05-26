@@ -6,6 +6,7 @@ with the Google Maps scrape order kept as a tiebreaker.
 """
 
 from datetime import datetime, timedelta, timezone
+from uuid import UUID
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -87,6 +88,18 @@ async def list_providers(
             if (amount := parse_aed(p.price_from)) is None or amount <= max_price
         ]
     return rows[:limit]
+
+
+async def get_provider(
+    session: AsyncSession, provider_id: UUID
+) -> ServiceProvider | None:
+    """Fetch one provider by id. The quote-draft CTA loads the provider
+    server-side (authoritative name/area/contact) rather than trusting the
+    client-passed fields. Returns None if it doesn't exist."""
+    result = await session.execute(
+        select(ServiceProvider).where(ServiceProvider.id == provider_id)
+    )
+    return result.scalar_one_or_none()
 
 
 async def upsert_provider(session: AsyncSession, data: dict) -> bool:
