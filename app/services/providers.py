@@ -22,7 +22,7 @@ BAYES_C = 4.2  # assumed global mean rating across Dubai service providers
 _WRITABLE = {
     "name", "category", "area", "address", "lat", "lng", "rating", "reviews_count",
     "phone", "whatsapp", "website", "maps_url", "price_level", "photo_url", "hours",
-    "google_rank", "is_sponsored", "source",
+    "highlights", "google_rank", "is_sponsored", "source",
 }
 
 

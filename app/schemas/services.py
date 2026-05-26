@@ -23,6 +23,7 @@ class ServiceProviderOut(ORMBaseModel):
     price_level: str | None = None
     photo_url: str | None = None
     hours: list | dict | None = None
+    highlights: list[str] | None = None
     score: float
     is_sponsored: bool
     source: str

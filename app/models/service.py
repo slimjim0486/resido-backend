@@ -55,6 +55,10 @@ class ServiceProvider(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     price_level: Mapped[str | None] = mapped_column(String(16))  # "$", "$$", …
     photo_url: Mapped[str | None] = mapped_column(String(1024))
     hours: Mapped[dict | None] = mapped_column(JSONB)  # opening hours as scraped
+    # Short feature chips distilled from the scrape's `additionalInfo` (e.g.
+    # "Online estimates", "Onsite services") — a lightweight "Highlights" block on
+    # the provider detail. JSONB list of strings; null/empty when Google has none.
+    highlights: Mapped[list | None] = mapped_column(JSONB)
     # Order the provider appeared in the Google Maps scrape (1 = top); a
     # tiebreaker behind score.
     google_rank: Mapped[int | None] = mapped_column(Integer)

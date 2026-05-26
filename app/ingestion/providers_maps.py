@@ -89,6 +89,35 @@ def _hours(item: dict):
     return h if isinstance(h, (list, dict)) else None
 
 
+# Google's `additionalInfo` groups attributes by category → [{label: bool}, …].
+# We keep only the *true* labels, from the categories worth surfacing as feature
+# chips (service-relevant first), and skip the noisy ones (parking/payments).
+_HIGHLIGHT_CATEGORIES = (
+    "Service options",
+    "Offerings",
+    "Highlights",
+    "From the business",
+    "Planning",
+    "Amenities",
+    "Accessibility",
+)
+_MAX_HIGHLIGHTS = 6
+
+
+def _highlights(item: dict) -> list[str] | None:
+    info = item.get("additionalInfo")
+    if not isinstance(info, dict):
+        return None
+    out: list[str] = []
+    for category in _HIGHLIGHT_CATEGORIES:
+        for entry in info.get(category) or []:
+            if isinstance(entry, dict):
+                for label, enabled in entry.items():
+                    if enabled is True and label not in out:
+                        out.append(str(label)[:80])
+    return out[:_MAX_HIGHLIGHTS] or None
+
+
 def normalize(
     item: dict, *, category: str, area: str, source: str, rank: int | None = None
 ) -> dict | None:
@@ -119,6 +148,7 @@ def normalize(
         "price_level": (str(_first(item, "price", "priceLevel") or "")[:16]) or None,
         "photo_url": _photo(item),
         "hours": _hours(item),
+        "highlights": _highlights(item),
         "google_rank": _to_int(item.get("rank")) or rank,
         "is_sponsored": bool(_first(item, "isAdvertisement", "isAd", "sponsored") or False),
         "source": source,
