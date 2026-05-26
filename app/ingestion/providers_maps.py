@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.logging import get_logger
-from app.ingestion import apify_client, r2_storage
+from app.ingestion import apify_client, providers_pricing, r2_storage
 from app.ingestion.services_registry import Category, grid, search_term
 from app.services import providers as providers_service
 
@@ -198,6 +198,10 @@ async def ingest_cell(
     # Re-host scraped Google photos in R2 (their source URLs are token-signed and
     # expire) before persisting. No-op when R2 isn't configured.
     await r2_storage.mirror_field(rows, src_field="photo_url", key_fn=_photo_key)
+    # Extract real advertised pricing from each provider's website (Google Maps
+    # gives none for these businesses). Mutates rows in place; no-op without a
+    # Claude key or when SERVICES_EXTRACT_PRICING is off.
+    priced = await providers_pricing.enrich_pricing(rows)
     inserted = await providers_service.upsert_providers(session, rows)
     # Reconcile this cell: providers not seen for ~2 monthly cycles get soft-hidden.
     # On a first scrape this is a no-op (survivors were just refreshed).
@@ -207,7 +211,7 @@ async def ingest_cell(
     logger.info(
         "providers_cell",
         category=category.key, area=area, source=source,
-        fetched=len(raw), kept=len(rows), inserted=inserted, retired=retired,
+        fetched=len(raw), kept=len(rows), priced=priced, inserted=inserted, retired=retired,
     )
     return inserted
 

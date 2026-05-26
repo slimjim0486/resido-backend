@@ -21,6 +21,12 @@ class ServiceProviderOut(ORMBaseModel):
     website: str | None = None
     maps_url: str | None = None
     price_level: str | None = None
+    # Real advertised pricing extracted from the provider's website (the `$`-style
+    # price_level above is never populated by Google Maps for these businesses).
+    price_from: str | None = None
+    price_to: str | None = None
+    price_unit: str | None = None
+    price_notes: str | None = None
     photo_url: str | None = None
     hours: list | dict | None = None
     highlights: list[str] | None = None

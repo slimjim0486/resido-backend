@@ -8,16 +8,47 @@ self-expiring feed, not a RAG corpus.
 """
 
 import hashlib
+import re
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.logging import get_logger
+from app.core.pricing import parse_aed
 from app.ingestion import apify_client, r2_storage
 from app.services import events as events_service
 
 logger = get_logger(__name__)
+
+# Signals that an event is (or isn't) one to bring kids to. Kept here so the
+# Apify and Exa paths infer it identically. Negatives win over positives — an
+# "after-dark family area … 18+ only" line should read as not-for-kids.
+_FAMILY_POSITIVE = re.compile(
+    r"\b(kid|kids|child|children|family|families|toddler|stroller|all[\s-]?ages|"
+    r"baby|babies|playground|teen)\b",
+    re.IGNORECASE,
+)
+_FAMILY_NEGATIVE = re.compile(
+    r"\b(18\+|21\+|adults?[\s-]?only|over[\s-]?18|over[\s-]?21|ladies['’]?\s*night|"
+    r"nightclub|after[\s-]?party|bottomless|free[\s-]?flow|shisha)\b",
+    re.IGNORECASE,
+)
+# Lifestyle category keys that are family-positive / -negative by their nature.
+_FAMILY_CATEGORIES = {"family"}
+_ADULT_CATEGORIES = {"nightlife"}
+
+
+def infer_family_friendly(category: str | None, *texts: str | None) -> bool | None:
+    """Best-effort kid-friendly verdict from category + free text. Returns True /
+    False when there's a clear signal, else None (unknown — never guessed)."""
+    blob = " ".join(t for t in texts if t)
+    cat = (category or "").lower()
+    if _FAMILY_NEGATIVE.search(blob) or cat in _ADULT_CATEGORIES:
+        return False
+    if cat in _FAMILY_CATEGORIES or _FAMILY_POSITIVE.search(blob):
+        return True
+    return None
 
 
 def _image_key(row: dict) -> str:
@@ -74,16 +105,21 @@ def normalize(item: dict, *, source: str, default_category: str = "events") -> d
     horizon = ends_at or starts_at
     expires_at = horizon + timedelta(days=1) if horizon else None
 
-    category = _first(item, "category", "type") or default_category
+    category = str(_first(item, "category", "type") or default_category).lower()[:80]
+    description = _first(item, "description", "summary", "snippet")
+    title_str = str(title)[:255]
+    price_from = _price(_first(item, "price", "priceFrom", "minPrice"))
     return {
-        "title": str(title)[:255],
-        "description": _first(item, "description", "summary", "snippet"),
-        "category": str(category).lower()[:80],
+        "title": title_str,
+        "description": description,
+        "category": category,
         "venue": _first(item, "venue", "venueName", "place", "location"),
         "area": _first(item, "area", "neighbourhood", "city"),
         "url": str(url)[:1024],
         "image_url": _first(item, "image", "imageUrl", "thumbnail", "photo"),
-        "price_from": _price(_first(item, "price", "priceFrom", "minPrice")),
+        "price_from": price_from,
+        "price_min": parse_aed(price_from),
+        "family_friendly": infer_family_friendly(category, title_str, description),
         "starts_at": starts_at,
         "ends_at": ends_at,
         "source": source,

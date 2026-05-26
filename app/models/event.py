@@ -7,7 +7,7 @@ corpus, so RAG would be wasted spend that goes stale.
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Index, String, Text, func
+from sqlalchemy import Boolean, DateTime, Index, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -28,7 +28,16 @@ class Event(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     area: Mapped[str | None] = mapped_column(String(120))
     url: Mapped[str] = mapped_column(String(1024), unique=True, nullable=False)
     image_url: Mapped[str | None] = mapped_column(String(1024))
+    # Display price as the source states it ("Free", "AED 95", "From AED 250").
     price_from: Mapped[str | None] = mapped_column(String(80))
+    # The lowest AED amount parsed from `price_from` (0.0 = free), so the feed can
+    # answer "under AED 500" queries. NULL = no price listed (≠ free); ingestion
+    # derives it via app.core.pricing.parse_aed alongside the display string.
+    price_min: Mapped[float | None] = mapped_column(Numeric(10, 2))
+    # Whether this is something to bring kids to. Derived at ingestion (category,
+    # keyword scan, or Claude extraction). NULL = unknown — only TRUE rows match a
+    # "kid-friendly" filter, so unknowns aren't falsely promoted or excluded.
+    family_friendly: Mapped[bool | None] = mapped_column(Boolean)
     starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     source: Mapped[str] = mapped_column(String(120), nullable=False)

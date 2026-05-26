@@ -85,6 +85,16 @@ served directly to Home hero · cached to each event's end date (self-expiring)
 - One scheduled Apify run/day covers it; on-demand reads hit the cached table, never the scraper.
 - Optional cheaper variant: Exa date-filtered search (`startPublishedDate`) for "what's on this week,"
   cached in Redis — use if a given source has no good Apify actor. *(Task #6.)*
+- **Query facets (migration `0011`):** each row carries `price_min` (lowest AED, parsed from the
+  `price_from` display string via `app/core/pricing.parse_aed`; `0`=free, `NULL`=no price listed) and
+  `family_friendly` (`bool|None`, derived at ingest via `events.infer_family_friendly` — category +
+  keyword scan, or the Claude extractor's explicit flag). These let `events_service.search_events`
+  answer budget / kid-friendly / day-of-week asks at the DB. Day/date filters read **Dubai-local**
+  time (`timezone('Asia/Dubai', starts_at)`), since rows are stored UTC.
+- **Search stays keyword, never semantic.** Free-text `query` is `ilike` over title/description/venue —
+  this is the one place we *deliberately don't* embed: the feed is small and time-bound, so vectors
+  would be recurring spend that goes stale. `search_events` backs both `GET /api/v1/events` and the
+  agent's `find_events` tool, so the Home feed and the co-pilot never diverge.
 
 ---
 

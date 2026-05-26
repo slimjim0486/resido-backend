@@ -53,6 +53,19 @@ class ServiceProvider(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Google's stable place identifier — the upsert key (dedupes across cells).
     place_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     price_level: Mapped[str | None] = mapped_column(String(16))  # "$", "$$", …
+    # Real advertised pricing, extracted from the provider's own website by Claude
+    # (Haiku) — see ingestion/providers_pricing.py. Google Maps never populates
+    # `price_level` for home-services businesses, so this is the only usable price
+    # signal we have. Stored as display strings (like events' `price_from`), not
+    # parsed numbers. All null until a pricing pass runs; null is the honest
+    # "no advertised price" state and the UI simply shows nothing.
+    price_from: Mapped[str | None] = mapped_column(String(32))   # e.g. "AED 50"
+    price_to: Mapped[str | None] = mapped_column(String(32))     # upper bound if a range
+    price_unit: Mapped[str | None] = mapped_column(String(64))   # "per hour", "per visit", …
+    price_notes: Mapped[str | None] = mapped_column(String(300))  # short context, e.g. "min 3 hours"
+    # When pricing was last extracted (set whether or not a price was found, so we
+    # can tell "tried, none advertised" from "never tried" and skip on re-runs).
+    price_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     photo_url: Mapped[str | None] = mapped_column(String(1024))
     hours: Mapped[dict | None] = mapped_column(JSONB)  # opening hours as scraped
     # Short feature chips distilled from the scrape's `additionalInfo` (e.g.

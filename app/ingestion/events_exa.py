@@ -16,8 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.logging import get_logger
+from app.core.pricing import parse_aed
 from app.ingestion import event_image, exa_client
-from app.ingestion.events import _parse_dt
+from app.ingestion.events import _parse_dt, infer_family_friendly
 from app.ingestion.events_extract import extract_events
 from app.services import events as events_service
 
@@ -66,13 +67,17 @@ def _to_event(r: dict, category: str, *, ttl_days: int = 14) -> dict | None:
     title = (r.get("title") or "").strip()
     if not url or not title:
         return None
+    description = _snippet(r.get("text"))
     return {
         "title": title[:255],
-        "description": _snippet(r.get("text")),
+        "description": description,
         "category": category,
         "url": url,
         "image_url": r.get("image"),  # Exa's og:image; mirrored to R2 before upsert
         "source": _host(url) or "exa",
+        # No price on a guide/listicle page; family verdict from category + text.
+        "price_min": None,
+        "family_friendly": infer_family_friendly(category, title, description),
         "starts_at": None,  # guides/listicles aren't single dated events
         # Rotate roughly weekly: re-ingested pages refresh this, stale ones expire.
         "expires_at": datetime.now(timezone.utc) + timedelta(days=ttl_days),
@@ -96,9 +101,15 @@ def _finalize(raw: dict, page: dict, category: str) -> dict | None:
     url = booking if _valid_http(booking) else f"{page['url']}#{_slug(title)}"
     horizon = ends_at or starts_at
     expires_at = (horizon + timedelta(days=1)) if horizon else now + timedelta(days=14)
+    description = raw.get("description") or None
+    price_from = raw.get("price_from") or None
+    # Prefer Claude's explicit family verdict; fall back to the shared heuristic.
+    family = raw.get("family_friendly")
+    if not isinstance(family, bool):
+        family = infer_family_friendly(category, title, description)
     return {
         "title": title[:255],
-        "description": (raw.get("description") or None),
+        "description": description,
         "category": category,
         "venue": raw.get("venue"),
         "area": raw.get("area"),
@@ -106,7 +117,9 @@ def _finalize(raw: dict, page: dict, category: str) -> dict | None:
         # Events extracted from one page share that page's Exa image (no
         # per-event art exists); better than a gradient. Mirrored to R2 below.
         "image_url": page.get("image"),
-        "price_from": (raw.get("price_from") or None),
+        "price_from": price_from,
+        "price_min": parse_aed(price_from),
+        "family_friendly": family,
         "starts_at": starts_at,
         "ends_at": ends_at,
         "source": _host(url) or "exa",

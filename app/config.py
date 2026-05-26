@@ -86,6 +86,12 @@ class Settings(BaseSettings):
     # The biggest cost/time lever — turn off (SERVICES_SCRAPE_DETAILS=false) for
     # fast, cheap re-seeds; you lose `hours` but keep everything else.
     SERVICES_SCRAPE_DETAILS: bool = True
+    # Extract real advertised pricing from each provider's website via Claude
+    # (Haiku) on the write path — Google Maps gives no usable price for these
+    # businesses. Gated together with ANTHROPIC_API_KEY: no key → no-op, rows keep
+    # null pricing (graceful degradation). Turn off for fast scrapes that skip the
+    # extra fetch + LLM call per provider. See ingestion/providers_pricing.py.
+    SERVICES_EXTRACT_PRICING: bool = True
     # Retire a provider after it's missed this many days of scrapes (≈ 2 monthly
     # cycles) — soft-hides stale/closed listings without dropping ranking-noise.
     SERVICES_STALE_GRACE_DAYS: int = 60

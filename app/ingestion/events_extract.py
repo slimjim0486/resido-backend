@@ -31,6 +31,9 @@ date is stated — NEVER guess a date.
 - area: the Dubai neighbourhood if identifiable (e.g. "Downtown", "Dubai Marina").
 - booking_url: include ONLY if a specific ticket/event link for that event appears in the text.
 - description: one or two factual sentences.
+- family_friendly: true if it's clearly suitable for kids/families (e.g. mentions \
+children, all ages, a theme park, a family day); false if it's clearly adults-only \
+(18+/21+, nightclub, ladies' night, bottomless brunch). Omit if unclear — don't guess.
 - If the page has no concrete events, return an empty list."""
 
 EMIT_EVENTS_TOOL = {
@@ -51,6 +54,10 @@ EMIT_EVENTS_TOOL = {
                         "area": {"type": "string", "description": "Dubai neighbourhood"},
                         "price_from": {"type": "string", "description": "'Free' or 'AED 95'"},
                         "description": {"type": "string", "description": "1-2 sentences"},
+                        "family_friendly": {
+                            "type": "boolean",
+                            "description": "true if clearly kid/family-suitable, false if clearly adults-only; omit if unclear",
+                        },
                         "booking_url": {"type": "string", "description": "specific ticket/event link if present"},
                     },
                     "required": ["title"],

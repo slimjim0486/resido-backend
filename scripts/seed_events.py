@@ -11,8 +11,9 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 from app.config import settings
+from app.core.pricing import parse_aed
 from app.database import async_session_maker
-from app.ingestion.events import ingest_apify_events
+from app.ingestion.events import infer_family_friendly, ingest_apify_events
 from app.ingestion.events_exa import ingest_exa_events
 from app.services import events as events_service
 
@@ -95,6 +96,11 @@ def _sample_events() -> list[dict]:
         ev["is_published"] = True
         # Mirror the ingestion rule: keep until a day after it ends.
         ev["expires_at"] = ev["ends_at"] + timedelta(days=1)
+        # Derive the budget/family facets the same way live ingestion does.
+        ev["price_min"] = parse_aed(ev.get("price_from"))
+        ev["family_friendly"] = infer_family_friendly(
+            ev.get("category"), ev.get("title"), ev.get("description")
+        )
     return raw
 
 

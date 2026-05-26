@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.pricing import parse_aed
 from app.models.service import ServiceProvider
 
 # Bayesian (IMDB-style) prior: until a provider has ~m reviews, its score is
@@ -23,6 +24,8 @@ _WRITABLE = {
     "name", "category", "area", "address", "lat", "lng", "rating", "reviews_count",
     "phone", "whatsapp", "website", "maps_url", "price_level", "photo_url", "hours",
     "highlights", "google_rank", "is_sponsored", "source",
+    # Website-extracted pricing (see ingestion/providers_pricing.py).
+    "price_from", "price_to", "price_unit", "price_notes", "price_fetched_at",
 }
 
 
@@ -45,21 +48,45 @@ async def list_providers(
     *,
     category: str | None = None,
     area: str | None = None,
+    min_rating: float | None = None,
+    query: str | None = None,
+    max_price: float | None = None,
     limit: int = 20,
 ) -> list[ServiceProvider]:
-    """Providers filtered by category/area, best-trust first (score desc), with the
-    Google Maps scrape order as a tiebreaker."""
+    """Active providers, best-trust first (Bayesian ``score`` desc, Google scrape
+    order as tiebreaker), behind optional filters:
+
+    - ``category`` exact grid key; ``area`` substring match on the neighbourhood.
+    - ``min_rating`` floors the raw Google rating (unrated rows drop).
+    - ``query`` substring match on the business name.
+    - ``max_price`` keeps providers whose advertised ``price_from`` is at or under
+      the AED budget, **plus** those with no advertised price (mostly null until a
+      pricing pass runs — hiding them would gut results). Applied in Python since
+      price is a sparse display string, not a numeric column.
+    """
     stmt = select(ServiceProvider).where(ServiceProvider.is_active.is_(True))
     if category:
         stmt = stmt.where(ServiceProvider.category == category)
     if area:
-        stmt = stmt.where(ServiceProvider.area == area)
+        stmt = stmt.where(ServiceProvider.area.ilike(f"%{area.strip()}%"))
+    if min_rating is not None:
+        stmt = stmt.where(ServiceProvider.rating >= min_rating)
+    if query and query.strip():
+        stmt = stmt.where(ServiceProvider.name.ilike(f"%{query.strip()}%"))
     stmt = stmt.order_by(
         ServiceProvider.score.desc(),
         ServiceProvider.google_rank.asc().nullslast(),
-    ).limit(limit)
-    result = await session.execute(stmt)
-    return list(result.scalars().all())
+    )
+    # Over-fetch when budget-filtering in Python so we can still fill `limit`.
+    stmt = stmt.limit(limit * 4 if max_price is not None else limit)
+    rows = list((await session.execute(stmt)).scalars().all())
+
+    if max_price is not None:
+        rows = [
+            p for p in rows
+            if (amount := parse_aed(p.price_from)) is None or amount <= max_price
+        ]
+    return rows[:limit]
 
 
 async def upsert_provider(session: AsyncSession, data: dict) -> bool:

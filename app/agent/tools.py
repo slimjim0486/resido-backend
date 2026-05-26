@@ -1,10 +1,11 @@
 """Tool definitions + dispatcher for the agent.
 
-Capabilities map to the requirement: READ (kb_search, get_profile, list_checklist,
-list_deadlines, list_renewals), WRITE (add_checklist_item, set_reminder,
-track_renewal, set_visa_anchor, create_lead), EDIT (update_profile,
-update_checklist_item, update_renewal). All mutations go through the shared
-`services.workspace` layer so behavior matches the REST API exactly.
+Capabilities map to the requirement: READ (kb_search, advanced_search, get_profile,
+list_checklist, list_deadlines, list_renewals, find_events, find_services), WRITE
+(add_checklist_item, set_reminder, track_renewal, set_visa_anchor, create_lead),
+EDIT (update_profile, update_checklist_item, update_renewal). Mutations go through
+the shared `services.workspace` layer, and the read tools call the same service
+functions the REST API uses, so the agent and API never diverge.
 """
 
 from datetime import date
@@ -12,6 +13,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services import events as events_service
 from app.services import providers as providers_service
 from app.services import workspace
 from app.services.advanced_search import advanced_search
@@ -199,8 +201,53 @@ TOOLS: list[dict] = [
         },
     },
     {
+        "name": "find_events",
+        "description": (
+            "Search Resido's curated, live Dubai lifestyle feed — things to do, dining, nightlife, "
+            "shopping, family days out, and outdoor experiences. Use this for ANY 'what's on / what "
+            "can we do' request and prefer it over web search for events. Supports budget, day, area, "
+            "and kid-friendly filters; returns tappable listings with booking links. Translate the "
+            "user's ask into filters (e.g. 'family event under AED 500 on Friday' → family_friendly=true, "
+            "max_price_aed=500, weekday='friday'). Present results with date, venue and price, link each "
+            "title to its url, then offer to set a reminder or add it to the checklist."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Free-text keywords, e.g. 'jazz', 'brunch', 'desert safari'. Optional.",
+                },
+                "category": {
+                    "type": "string",
+                    "description": "dining | events | nightlife | shopping | family | outdoors",
+                },
+                "area": {
+                    "type": "string",
+                    "description": "Dubai neighbourhood, e.g. 'Downtown', 'Dubai Marina'",
+                },
+                "family_friendly": {
+                    "type": "boolean",
+                    "description": "true to return only kid/family-suitable events",
+                },
+                "max_price_aed": {
+                    "type": "number",
+                    "description": "Budget ceiling in AED — keeps events at or under it (and free ones)",
+                },
+                "free_only": {"type": "boolean", "description": "true to return only free events"},
+                "weekday": {
+                    "type": "string",
+                    "description": "Match a day of week, e.g. 'friday'. For 'this Friday' pass the weekday; for an exact date use date_from/date_to.",
+                },
+                "date_from": {"type": "string", "description": "Earliest event date, YYYY-MM-DD"},
+                "date_to": {"type": "string", "description": "Latest event date, YYYY-MM-DD"},
+                "limit": {"type": "integer", "description": "Max results, 1-12. Default 6."},
+            },
+        },
+    },
+    {
         "name": "find_services",
-        "description": "Find ranked local service providers in Dubai (cleaning, AC repair, handyman, plumbing, electrician, movers, pest control, maid service, car service, laundry). Use this when the user needs a home/living service. Returns providers sorted by a trust score (rating weighted by review count).",
+        "description": "Find ranked local service providers in Dubai (cleaning, AC repair, handyman, plumbing, electrician, movers, pest control, maid service, car service, laundry). Use this when the user needs a home/living service. Returns providers sorted by a trust score (rating weighted by review count); filter by area, minimum rating, or budget.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -212,6 +259,15 @@ TOOLS: list[dict] = [
                     "type": "string",
                     "description": "Optional Dubai area filter, e.g. 'Dubai Marina', 'JLT', 'Business Bay'",
                 },
+                "min_rating": {
+                    "type": "number",
+                    "description": "Optional floor on the Google rating, e.g. 4.5",
+                },
+                "max_price_aed": {
+                    "type": "number",
+                    "description": "Optional AED budget — keeps providers at or under this advertised price (and those with no listed price)",
+                },
+                "limit": {"type": "integer", "description": "Max providers, 1-10. Default 5."},
             },
             "required": ["category"],
         },
@@ -478,12 +534,61 @@ async def execute_tool(
             },
         )
 
+    if name == "find_events":
+        limit = max(1, min(int(tool_input.get("limit") or 6), 12))
+        events = await events_service.search_events(
+            session,
+            query=tool_input.get("query"),
+            category=tool_input.get("category"),
+            area=tool_input.get("area"),
+            family_friendly=tool_input.get("family_friendly"),
+            max_price=tool_input.get("max_price_aed"),
+            free_only=bool(tool_input.get("free_only")),
+            weekday=tool_input.get("weekday"),
+            date_from=_parse_date(tool_input.get("date_from")),
+            date_to=_parse_date(tool_input.get("date_to")),
+            limit=limit,
+        )
+        return (
+            {
+                "events": [
+                    {
+                        "title": e.title,
+                        "description": e.description[:200] if e.description else None,
+                        "category": e.category,
+                        "venue": e.venue,
+                        "area": e.area,
+                        "starts_at": e.starts_at.isoformat() if e.starts_at else None,
+                        "price_from": e.price_from,
+                        "price_min_aed": float(e.price_min) if e.price_min is not None else None,
+                        "is_free": (float(e.price_min) == 0) if e.price_min is not None else None,
+                        "family_friendly": e.family_friendly,
+                        "url": e.url,
+                    }
+                    for e in events
+                ],
+                "count": len(events),
+                "note": (
+                    "Live listings from Resido's curated feed (recommendations, not legal facts — no "
+                    "verified-source citation needed). Present each with its date, venue and price, and "
+                    "link the title to its url. Say when a price isn't listed (price_from null). For a "
+                    "dated event, offer to set_reminder or add_checklist_item. If nothing fits, loosen "
+                    "one filter rather than inventing events."
+                ),
+            },
+            [],
+            None,
+        )
+
     if name == "find_services":
+        limit = max(1, min(int(tool_input.get("limit") or 5), 10))
         items = await providers_service.list_providers(
             session,
             category=tool_input["category"],
             area=tool_input.get("area"),
-            limit=5,
+            min_rating=tool_input.get("min_rating"),
+            max_price=tool_input.get("max_price_aed"),
+            limit=limit,
         )
         return (
             {
@@ -493,15 +598,23 @@ async def execute_tool(
                         "area": p.area,
                         "rating": p.rating,
                         "reviews_count": p.reviews_count,
+                        "trust_score": round(p.score, 2),
+                        "price_from": p.price_from,
+                        "price_to": p.price_to,
+                        "price_unit": p.price_unit,
+                        "price_notes": p.price_notes,
+                        "highlights": p.highlights,
                         "phone": p.phone,
                         "whatsapp": p.whatsapp,
                         "website": p.website,
+                        "maps_url": p.maps_url,
                     }
                     for p in items
                 ],
                 "count": len(items),
-                "note": "Ranked by trust score (rating weighted by review count). "
-                "Offer to request a callback/quote via create_lead with the user's consent.",
+                "note": "Ranked by trust score (rating weighted by review count). Lead with the rating + "
+                "review count as the trust signal and mention the advertised price when present (say so "
+                "when it isn't). Offer to request a callback/quote via create_lead with the user's consent.",
             },
             [],
             None,
