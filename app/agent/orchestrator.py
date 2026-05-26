@@ -12,7 +12,7 @@ from app.config import settings
 from app.core.logging import get_logger
 from app.models.profile import Profile
 from app.models.user import User
-from app.services import renewals
+from app.services import preferences, renewals
 from app.services.workspace import (
     get_or_create_profile,
     list_checklist,
@@ -98,6 +98,14 @@ async def _workspace_snapshot(session: AsyncSession, profile: Profile, user_id, 
             "Upcoming reminders: "
             + "; ".join(f"{d.title} ({d.due_date.isoformat()})" for d in upcoming)
         )
+
+    # Taste graph (events/services personalisation): the feed already re-ranks for
+    # this user, so this line is just so the agent can *name* the preference when
+    # it explains a pick ("a brunch in Marina, since you tend to like those").
+    pref = await preferences.get_preference_profile(session, user_id)
+    taste = preferences.memory_for_prompt(pref)
+    if taste:
+        lines.append(f"Lifestyle tastes (for find_events/find_services): {taste}")
 
     return "\n".join(lines)
 

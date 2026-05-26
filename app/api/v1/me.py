@@ -17,6 +17,13 @@ from app.schemas.favorites import (
     FavoritesOut,
     FavoriteToggleOut,
 )
+from app.schemas.preferences import (
+    PreferenceNoteCreate,
+    PreferenceNoteOut,
+    PreferenceNoteUpdate,
+    PreferenceOut,
+    PreferenceSettingsUpdate,
+)
 from app.schemas.services import ServiceProviderOut
 from app.schemas.workspace import (
     ChecklistItemCreate,
@@ -31,7 +38,8 @@ from app.schemas.workspace import (
     ProfileUpdate,
     VisaAnchorIn,
 )
-from app.services import workspace
+from app.models.preference import PreferenceProfile
+from app.services import preferences, workspace
 
 router = APIRouter(prefix="/me", tags=["me"])
 
@@ -202,3 +210,78 @@ async def remove_favorite(
         session, current_user.id, item_type=item_type, item_id=item_id
     )
     return APIResponse(data=FavoriteToggleOut(favorited=favorited), message="Removed")
+
+
+# ─── Preference memory: "What Resido knows about you" (see PERSONALIZATION.md) ───
+def _preference_out(profile: PreferenceProfile) -> PreferenceOut:
+    chips = preferences.derived_chips(profile)
+    return PreferenceOut(
+        summary=profile.summary,
+        personalization_paused=profile.personalization_paused,
+        signal_count=profile.signal_count,
+        typical_budget_aed=profile.typical_budget_aed,
+        family_bias=profile.family_bias,
+        areas=chips["areas"],
+        event_categories=chips["event_categories"],
+        services_used=chips["services_used"],
+        notes=[PreferenceNoteOut(**n) for n in (profile.notes or [])],
+    )
+
+
+@router.get("/preferences", response_model=APIResponse[PreferenceOut])
+async def get_preferences(current_user: CurrentUser, session: Session):
+    """The taste graph the co-pilot has built — derived chips, editable notes, and
+    the pause state. Everything here is user-visible and user-editable by design."""
+    profile = await preferences.get_or_create_preference_profile(session, current_user.id)
+    return APIResponse(data=_preference_out(profile))
+
+
+@router.post(
+    "/preferences/notes", response_model=APIResponse[PreferenceOut], status_code=status.HTTP_201_CREATED
+)
+async def add_preference_note(
+    data: PreferenceNoteCreate, current_user: CurrentUser, session: Session
+):
+    profile = await preferences.add_preference_note(
+        session, current_user.id, text=data.text, source="explicit"
+    )
+    return APIResponse(data=_preference_out(profile), message="Remembered")
+
+
+@router.patch("/preferences/notes/{note_id}", response_model=APIResponse[PreferenceOut])
+async def patch_preference_note(
+    note_id: str, data: PreferenceNoteUpdate, current_user: CurrentUser, session: Session
+):
+    profile = await preferences.update_preference_note(
+        session, current_user.id, note_id, data.model_dump(exclude_unset=True)
+    )
+    if profile is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Note not found")
+    return APIResponse(data=_preference_out(profile))
+
+
+@router.delete("/preferences/notes/{note_id}", response_model=APIResponse[PreferenceOut])
+async def delete_preference_note(note_id: str, current_user: CurrentUser, session: Session):
+    profile = await preferences.delete_preference_note(session, current_user.id, note_id)
+    if profile is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Note not found")
+    return APIResponse(data=_preference_out(profile), message="Forgotten")
+
+
+@router.patch("/preferences", response_model=APIResponse[PreferenceOut])
+async def update_preference_settings(
+    data: PreferenceSettingsUpdate, current_user: CurrentUser, session: Session
+):
+    """Toggle the personalisation kill switch (taste is kept, just ignored while paused)."""
+    profile = await preferences.set_personalization_paused(
+        session, current_user.id, data.personalization_paused
+    )
+    msg = "Personalization paused" if profile.personalization_paused else "Personalization on"
+    return APIResponse(data=_preference_out(profile), message=msg)
+
+
+@router.post("/preferences/reset", response_model=APIResponse[PreferenceOut])
+async def reset_preferences(current_user: CurrentUser, session: Session):
+    """Forget everything — drops all signals and blanks the profile to a clean slate."""
+    profile = await preferences.reset_preferences(session, current_user.id)
+    return APIResponse(data=_preference_out(profile), message="Memory cleared")

@@ -3,14 +3,14 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.user import AuthSession, User
-from app.services.auth import now_utc
+from app.services.auth import now_utc, optional_user_from_bearer
 from app.utils.jwt import decode_access_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
@@ -60,3 +60,15 @@ async def get_current_active_user(
     if not current_user.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user")
     return current_user
+
+
+async def get_optional_user(
+    session: Annotated[AsyncSession, Depends(get_db)],
+    authorization: Annotated[str | None, Header()] = None,
+) -> User | None:
+    """Resolve the bearer token if one is present, else None — never raises.
+
+    For endpoints that are public (events/services feeds) but personalise when the
+    caller is signed in. The Flutter client always attaches its guest token, so a
+    request from the app resolves to a user; a logged-out/anonymous caller doesn't."""
+    return await optional_user_from_bearer(session, authorization)

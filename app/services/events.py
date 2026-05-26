@@ -11,6 +11,8 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.event import Event
+from app.models.preference import PreferenceProfile
+from app.services import preferences
 
 # Events are stored in UTC; day-of-week / date filters must read in Dubai local
 # time or a Friday-evening event lands on Thursday (Dubai is UTC+4).
@@ -58,11 +60,18 @@ async def search_events(
     date_from: date | None = None,
     date_to: date | None = None,
     limit: int = 20,
+    personalize: PreferenceProfile | None = None,
 ) -> list[Event]:
     """The one query behind both the public feed and the agent's `find_events`.
 
     Always scoped to live rows (published & not expired), soonest-first with
     undated ('ongoing') events last. Every filter is optional and additive:
+
+    When ``personalize`` is given (and the user has signals + hasn't paused taste),
+    the SQL filters/order are unchanged but we over-fetch and re-rank the candidates
+    by blending taste with imminence (see preferences.rank_events). Passing ``None``
+    — the anonymous feed — returns the plain soonest-first list, byte-for-byte as
+    before.
 
     - ``query``    keyword ``ilike`` over title/description/venue (no embeddings).
     - ``category`` exact lifestyle key (dining/events/nightlife/shopping/family/outdoors).
@@ -113,9 +122,18 @@ async def search_events(
         if date_to:
             stmt = stmt.where(func.date(local_start) <= date_to)
 
-    stmt = stmt.order_by(Event.starts_at.is_(None), Event.starts_at.asc()).limit(limit)
+    # Over-fetch when personalising so the re-rank has a candidate pool to work
+    # with; the SQL ordering (soonest-first) still decides which rows that pool is.
+    personalize_active = preferences.personalization_alpha(personalize) > 0
+    fetch_limit = min(limit * 3, 60) if personalize_active else limit
+
+    stmt = stmt.order_by(Event.starts_at.is_(None), Event.starts_at.asc()).limit(fetch_limit)
     result = await session.execute(stmt)
-    return list(result.scalars().all())
+    rows = list(result.scalars().all())
+
+    if personalize_active:
+        return preferences.rank_events(personalize, rows, limit=limit)
+    return rows
 
 
 async def list_active_events(

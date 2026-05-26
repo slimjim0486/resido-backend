@@ -2,10 +2,11 @@
 
 Capabilities map to the requirement: READ (kb_search, advanced_search, get_profile,
 list_checklist, list_deadlines, list_renewals, find_events, find_services), WRITE
-(add_checklist_item, set_reminder, track_renewal, set_visa_anchor, create_lead),
-EDIT (update_profile, update_checklist_item, update_renewal). Mutations go through
-the shared `services.workspace` layer, and the read tools call the same service
-functions the REST API uses, so the agent and API never diverge.
+(add_checklist_item, set_reminder, track_renewal, set_visa_anchor, create_lead,
+remember_preference), EDIT (update_profile, update_checklist_item, update_renewal).
+Mutations go through a shared service layer — `services.workspace` for the workspace
+domains, `services.preferences` for taste memory — and the read tools call the same
+service functions the REST API uses, so the agent and API never diverge.
 """
 
 from datetime import date
@@ -14,6 +15,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import events as events_service
+from app.services import preferences as preferences_service
 from app.services import providers as providers_service
 from app.services import quotes as quotes_service
 from app.services import workspace
@@ -315,6 +317,28 @@ TOOLS: list[dict] = [
             },
         },
     },
+    {
+        "name": "remember_preference",
+        "description": (
+            "Save a durable lifestyle taste, preference, or constraint the user states that the "
+            "events/services filters can't capture on their own — e.g. 'I'm vegetarian', 'we hate "
+            "loud or crowded places', 'we love the beach', 'prefer outdoor seating', 'no alcohol'. "
+            "This sharpens future find_events/find_services suggestions. Use ONLY for LASTING "
+            "preferences about leisure/dining/services that the user clearly stated; NOT for one-off "
+            "requests ('tonight we want sushi'), and NOT for visa/legal/document facts (use "
+            "update_profile or track_renewal for those)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "The preference as a short third-person phrase, e.g. 'Vegetarian', 'Dislikes loud venues', 'Loves beach days', 'Prefers budget-friendly options'.",
+                },
+            },
+            "required": ["text"],
+        },
+    },
 ]
 
 
@@ -561,6 +585,7 @@ async def execute_tool(
 
     if name == "find_events":
         limit = max(1, min(int(tool_input.get("limit") or 6), 12))
+        personalize = await preferences_service.get_preference_profile(session, user_id)
         events = await events_service.search_events(
             session,
             query=tool_input.get("query"),
@@ -573,6 +598,7 @@ async def execute_tool(
             date_from=_parse_date(tool_input.get("date_from")),
             date_to=_parse_date(tool_input.get("date_to")),
             limit=limit,
+            personalize=personalize,
         )
         return (
             {
@@ -607,6 +633,7 @@ async def execute_tool(
 
     if name == "find_services":
         limit = max(1, min(int(tool_input.get("limit") or 5), 10))
+        personalize = await preferences_service.get_preference_profile(session, user_id)
         items = await providers_service.list_providers(
             session,
             category=tool_input["category"],
@@ -615,6 +642,7 @@ async def execute_tool(
             min_rating=tool_input.get("min_rating"),
             max_price=tool_input.get("max_price_aed"),
             limit=limit,
+            personalize=personalize,
         )
         return (
             {
@@ -742,6 +770,19 @@ async def execute_tool(
             },
             [],
             {"type": "lead_created", "summary": f"Logged your {lead.vertical} request"},
+        )
+
+    if name == "remember_preference":
+        text = (tool_input.get("text") or "").strip()
+        if not text:
+            return {"ok": False, "error": "text is required"}, [], None
+        await preferences_service.add_preference_note(
+            session, user_id, text=text, source="chat"
+        )
+        return (
+            {"ok": True, "note": "Saved as a lasting preference; it will shape future event/service suggestions."},
+            [],
+            {"type": "preference_remembered", "summary": f"Got it — I'll remember: {text}"},
         )
 
     return {"ok": False, "error": f"unknown tool {name}"}, [], None

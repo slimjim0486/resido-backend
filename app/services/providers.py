@@ -12,7 +12,9 @@ from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.pricing import parse_aed
+from app.models.preference import PreferenceProfile
 from app.models.service import ServiceProvider
+from app.services import preferences
 
 # Bayesian (IMDB-style) prior: until a provider has ~m reviews, its score is
 # pulled toward the global mean rating C. Tunable, but these match the spec.
@@ -54,6 +56,7 @@ async def list_providers(
     query: str | None = None,
     max_price: float | None = None,
     limit: int = 20,
+    personalize: PreferenceProfile | None = None,
 ) -> list[ServiceProvider]:
     """Active providers, best-trust first (Bayesian ``score`` desc, Google scrape
     order as tiebreaker), behind optional filters:
@@ -71,6 +74,10 @@ async def list_providers(
       the AED budget, **plus** those with no advertised price (mostly null until a
       pricing pass runs — hiding them would gut results). Applied in Python since
       price is a sparse display string, not a numeric column.
+    - ``personalize`` re-ranks the trust-sorted pool by a *bounded* taste boost
+      (area affinity, trades they've used, budget fit) so trust still dominates —
+      see preferences.rank_providers. ``None`` (the anonymous directory) returns
+      the plain trust order exactly as before.
     """
     stmt = select(ServiceProvider).where(ServiceProvider.is_active.is_(True))
     if category:
@@ -93,8 +100,11 @@ async def list_providers(
         ServiceProvider.google_rank.asc().nullslast(),
     ]
     stmt = stmt.order_by(*order_by)
-    # Over-fetch when budget-filtering in Python so we can still fill `limit`.
-    stmt = stmt.limit(limit * 4 if max_price is not None else limit)
+    # Over-fetch when we'll prune/re-rank in Python (budget filter or taste re-rank)
+    # so we can still fill `limit`.
+    personalize_active = preferences.personalization_alpha(personalize) > 0
+    over_fetch = max_price is not None or personalize_active
+    stmt = stmt.limit(limit * 4 if over_fetch else limit)
     rows = list((await session.execute(stmt)).scalars().all())
 
     if max_price is not None:
@@ -102,6 +112,9 @@ async def list_providers(
             p for p in rows
             if (amount := parse_aed(p.price_from)) is None or amount <= max_price
         ]
+
+    if personalize_active:
+        return preferences.rank_providers(personalize, rows, limit=limit)
     return rows[:limit]
 
 

@@ -18,7 +18,7 @@ from app.models.favorite import Favorite
 from app.models.lead import Lead
 from app.models.profile import Profile
 from app.models.service import ServiceProvider
-from app.services import renewals
+from app.services import preferences, renewals
 
 
 async def get_or_create_profile(session: AsyncSession, user_id: UUID) -> Profile:
@@ -226,6 +226,9 @@ async def create_lead(
     session.add(lead)
     await session.commit()
     await session.refresh(lead)
+    # A lead is the strongest taste signal we get — feed it into the preference
+    # memory (best-effort; never lets capture break lead creation).
+    await preferences.capture_lead(session, user_id, vertical=vertical, payload=payload or {})
     return lead
 
 
@@ -298,6 +301,8 @@ async def add_favorite(
     )
     await session.execute(stmt)
     await session.commit()
+    # Saving something is a strong taste signal — record it for the co-pilot's memory.
+    await preferences.capture_favorite(session, user_id, item_type=item_type, item_id=item_id)
     return True
 
 
@@ -316,4 +321,9 @@ async def remove_favorite(
     if favorite is not None:
         await session.delete(favorite)
         await session.commit()
+        # Only a real un-save is a (mild negative) taste signal; removing something
+        # that was never saved isn't.
+        await preferences.capture_favorite(
+            session, user_id, item_type=item_type, item_id=item_id, removed=True
+        )
     return False

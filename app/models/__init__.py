@@ -7,6 +7,7 @@ from app.models.event import Event
 from app.models.favorite import Favorite
 from app.models.kb_chunk import KBChunk
 from app.models.lead import Lead
+from app.models.preference import PreferenceProfile, PreferenceSignal
 from app.models.profile import Profile
 from app.models.service import ServiceProvider
 from app.models.source import Source
@@ -27,4 +28,6 @@ __all__ = [
     "Source",
     "KBChunk",
     "Lead",
+    "PreferenceSignal",
+    "PreferenceProfile",
 ]
