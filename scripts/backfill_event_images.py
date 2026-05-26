@@ -27,13 +27,9 @@ from sqlalchemy import not_, or_, select
 
 from app.config import settings
 from app.database import async_session_maker
-from app.ingestion import og_image, r2_storage
+from app.ingestion import event_image, og_image, r2_storage
 from app.ingestion.events import _image_key
 from app.models.event import Event
-
-
-def _on_r2(url: str | None) -> bool:
-    return bool(url) and url.startswith(settings.R2_PUBLIC_URL.rstrip("/"))
 
 
 async def run(limit: int | None, dry_run: bool, include_expired: bool, force: bool) -> None:
@@ -73,28 +69,33 @@ async def run(limit: int | None, dry_run: bool, include_expired: bool, force: bo
         async def _one(ev: Event) -> None:
             nonlocal found, mirrored
             async with sem:
+                # Candidates: per-event Exa results, then the page's og:image as a
+                # fallback. mirror_best keeps the first that's a renderable photo.
+                candidates = await event_image.find_candidates(ev.title, ev.venue, ev.area)
                 og = await og_image.fetch_og_image(client, ev.url)
-                if not og:
+                if og:
+                    candidates.append(og)
+                if not candidates:
                     return
                 found += 1
                 if dry_run:
                     return
-                new = await r2_storage.mirror_image(og, key=_image_key({"url": ev.url}), client=client)
-            # Prefer the R2 URL; fall back to the source og URL if mirroring failed
-            # (news og images are usually hotlink-friendly, so a card still renders).
-            ev.image_url = new
-            if _on_r2(new):
+                new = await r2_storage.mirror_best(
+                    candidates, key=_image_key({"url": ev.url}), client=client
+                )
+            if new:
+                ev.image_url = new
                 mirrored += 1
 
         await asyncio.gather(*(_one(r) for r in rows))
 
         if dry_run:
-            print(f"og:image found for {found}/{len(rows)} (no writes)")
+            print(f"image candidates found for {found}/{len(rows)} (no writes)")
             return
         await session.commit()
         print(
-            f"og:image found {found}/{len(rows)} · mirrored to R2 {mirrored} · "
-            f"{found - mirrored} kept on source URL · {len(rows) - found} left on gradient"
+            f"candidates {found}/{len(rows)} · mirrored a renderable photo to R2 {mirrored} · "
+            f"{found - mirrored} no renderable candidate · {len(rows) - found} no candidate (gradient)"
         )
 
 

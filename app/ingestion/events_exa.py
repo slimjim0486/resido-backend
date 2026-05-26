@@ -16,8 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.logging import get_logger
-from app.ingestion import exa_client, r2_storage
-from app.ingestion.events import _image_key, _parse_dt
+from app.ingestion import event_image, exa_client
+from app.ingestion.events import _parse_dt
 from app.ingestion.events_extract import extract_events
 from app.services import events as events_service
 
@@ -171,8 +171,9 @@ async def ingest_exa_events(
         else:
             rows = [e for e in (_to_event(r, key) for r in results) if e]
 
-        # Re-host Exa's images in R2 before persisting (stable URLs, no expiry).
-        await r2_storage.mirror_field(rows, src_field="image_url", key_fn=_image_key)
+        # Give each event a distinct, renderable image: a per-event Exa search
+        # (title+venue), falling back to the article og:image, mirrored to R2.
+        await event_image.resolve_images(rows)
         n = await events_service.upsert_events(session, rows)
         inserted += n
         logger.info(

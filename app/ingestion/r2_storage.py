@@ -66,11 +66,17 @@ def _sniff_content_type(body: bytes) -> str | None:
     return None
 
 
+# Formats Flutter's built-in image codec can decode. AVIF/SVG/x-icon get
+# rejected here (Exa sometimes returns a .avif file, a logo SVG, or a favicon as
+# a page's "image") so we never store an image a card can't render.
+_RENDERABLE = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+
+
 def _resolve_content_type(header_ct: str | None, body: bytes) -> str | None:
     ct = (header_ct or "").split(";")[0].strip().lower()
-    if ct.startswith("image/"):
-        return ct
-    return _sniff_content_type(body)  # fall back to the bytes; None ⇒ not an image
+    if ct not in _RENDERABLE:
+        ct = _sniff_content_type(body) or ""  # trust the bytes over a wrong/missing header
+    return ct if ct in _RENDERABLE else None  # None ⇒ not a renderable photo; skip it
 
 
 def _hmac(key: bytes, msg: str) -> bytes:
@@ -136,6 +142,11 @@ def _public_url(key: str) -> str:
     return settings.R2_PUBLIC_URL.rstrip("/") + "/" + quote(key, safe="/")
 
 
+def is_r2_url(url: str | None) -> bool:
+    """True if ``url`` points at our R2 public bucket (i.e. a mirror succeeded)."""
+    return bool(url and settings.R2_PUBLIC_URL and url.startswith(settings.R2_PUBLIC_URL.rstrip("/")))
+
+
 async def mirror_image(src_url: str, *, key: str, client: httpx.AsyncClient) -> str:
     """Download ``src_url`` and re-host it in R2 under ``key``; return the public R2
     URL. On any failure (or a non-image response) returns ``src_url`` unchanged."""
@@ -156,6 +167,24 @@ async def mirror_image(src_url: str, *, key: str, client: httpx.AsyncClient) -> 
     except Exception as exc:  # mirroring is best-effort; never sink an ingest run
         logger.warning("r2_mirror_failed", src=src_url[:200], key=key, error=str(exc))
         return src_url
+
+
+async def mirror_best(candidates, *, key: str, client: httpx.AsyncClient) -> str | None:
+    """Try each candidate source URL in order; return the public R2 URL of the
+    first that mirrors as a renderable photo, or None if none do.
+
+    Used when several images might do (e.g. a per-event search returns multiple
+    results, some unusable AVIF/SVG/favicons): the first that downloads as a
+    jpeg/png/webp/gif and uploads wins; the rest, and an empty list, yield None."""
+    if not settings.r2_enabled:
+        return None
+    for src in candidates:
+        if not src:
+            continue
+        url = await mirror_image(src, key=key, client=client)
+        if is_r2_url(url):  # mirror_image returns the source URL on any failure
+            return url
+    return None
 
 
 async def mirror_field(rows, *, src_field: str, key_fn) -> None:
