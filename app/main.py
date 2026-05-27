@@ -9,6 +9,7 @@ from app.api.v1 import api_router
 from app.config import settings
 from app.core.logging import configure_logging, get_logger
 from app.core.redis import close_redis, init_redis
+from app.services.event_feed_scheduler import start_event_feed_scheduler, stop_event_feed_scheduler
 
 configure_logging()
 logger = get_logger(__name__)
@@ -23,7 +24,9 @@ async def lifespan(app: FastAPI):
         ai_enabled=settings.ai_enabled,
     )
     await init_redis()
+    events_feed_task = start_event_feed_scheduler()
     yield
+    await stop_event_feed_scheduler(events_feed_task)
     await close_redis()
     logger.info("shutdown")
 

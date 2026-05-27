@@ -79,6 +79,12 @@ class Settings(BaseSettings):
     # Physical cleanup keeps a short audit/debug window after events disappear
     # from the app via expires_at.
     EVENTS_EXPIRED_RETENTION_DAYS: int = 30
+    # Reliability fallback for the "What's On" feed. Railway cron should run
+    # scripts/seed_events.py daily, but the web service can also run it if the
+    # cron service is missing or delayed.
+    EVENTS_FEED_AUTORUN: bool = True
+    EVENTS_FEED_RUN_HOUR_DUBAI: int = 6
+    EVENTS_FEED_STALE_AFTER_HOURS: int = 20
     # Off-the-shelf Apify Google Maps actor that powers the Services vertical
     # (Tier A-style durable provider rows; see backend/INGESTION.md). Reuses
     # APIFY_TOKEN — no new secret. Unset/blank → seed uses curated samples.
