@@ -1,9 +1,8 @@
 """Public lifestyle 'what's on' feed — Tier B (see backend/INGESTION.md).
 
 Optional auth: this is content, not personal data, so the Home hero loads it
-without a session. But if the caller IS signed in (the Flutter client always
-attaches its guest token), we personalise the ordering from their taste graph
-(see backend/PERSONALIZATION.md). Anonymous callers get the plain feed unchanged.
+without a session. The default public feed stays strict newest-scrape first; a
+caller can opt into taste re-ranking when it wants a personalised listing.
 """
 
 from datetime import date
@@ -40,13 +39,16 @@ async def list_events(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=50),
+    personalized: bool = Query(default=False, description="Opt into taste-based re-ranking"),
 ):
     """The public lifestyle feed. With no filters it's the latest-scraped 'what's on'
     list; the same filters power the agent's `find_events` so both stay in
-    lockstep. A signed-in caller's feed is re-ranked by their taste (no-op when
-    anonymous)."""
+    lockstep. Personalisation is opt-in so Home/Explore remain newest-scraped
+    by default."""
     personalize = (
-        await preferences_service.get_preference_profile(session, user.id) if user else None
+        await preferences_service.get_preference_profile(session, user.id)
+        if personalized and user
+        else None
     )
     items = await events_service.search_events(
         session,
