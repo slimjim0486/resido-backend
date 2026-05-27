@@ -30,6 +30,7 @@ class ServiceProviderOut(ORMBaseModel):
     photo_url: str | None = None
     hours: list | dict | None = None
     highlights: list[str] | None = None
+    review_curation: dict | None = None
     score: float
     is_sponsored: bool
     source: str

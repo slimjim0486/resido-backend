@@ -72,6 +72,10 @@ class ServiceProvider(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # "Online estimates", "Onsite services") — a lightweight "Highlights" block on
     # the provider detail. JSONB list of strings; null/empty when Google has none.
     highlights: Mapped[list | None] = mapped_column(JSONB)
+    # Compact, non-verbatim review analysis from scraped public reviews when the
+    # actor returns them, backed by rating/review-volume cues otherwise. JSONB:
+    # {summary, positives[], watchouts[], sample_size, rating_basis}.
+    review_curation: Mapped[dict | None] = mapped_column(JSONB)
     # Order the provider appeared in the Google Maps scrape (1 = top); a
     # tiebreaker behind score.
     google_rank: Mapped[int | None] = mapped_column(Integer)

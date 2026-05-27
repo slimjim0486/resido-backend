@@ -98,6 +98,11 @@ class Settings(BaseSettings):
     # The biggest cost/time lever — turn off (SERVICES_SCRAPE_DETAILS=false) for
     # fast, cheap re-seeds; you lose `hours` but keep everything else.
     SERVICES_SCRAPE_DETAILS: bool = True
+    # Small Google-review sample per provider for non-verbatim review curation.
+    # Set to 0 to disable. This forces detail-page scraping and adds Apify cost,
+    # so keep it low; we store themes only and explicitly skip reviewer personal
+    # data in the actor input.
+    SERVICES_MAX_REVIEWS: int = 8
     # Extract real advertised pricing from each provider's website via Claude
     # (Haiku) on the write path — Google Maps gives no usable price for these
     # businesses. Gated together with ANTHROPIC_API_KEY: no key → no-op, rows keep

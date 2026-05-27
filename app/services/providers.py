@@ -26,7 +26,7 @@ BAYES_C = 4.2  # assumed global mean rating across Dubai service providers
 _WRITABLE = {
     "name", "category", "area", "address", "lat", "lng", "rating", "reviews_count",
     "phone", "whatsapp", "website", "maps_url", "price_level", "photo_url", "hours",
-    "highlights", "google_rank", "is_sponsored", "source",
+    "highlights", "review_curation", "google_rank", "is_sponsored", "source",
     # Website-extracted pricing (see ingestion/providers_pricing.py).
     "price_from", "price_to", "price_unit", "price_notes", "price_fetched_at",
 }

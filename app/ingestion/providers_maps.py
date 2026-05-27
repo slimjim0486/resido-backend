@@ -118,6 +118,131 @@ def _highlights(item: dict) -> list[str] | None:
     return out[:_MAX_HIGHLIGHTS] or None
 
 
+_REVIEW_LIST_KEYS = (
+    "reviews",
+    "reviewsData",
+    "userReviews",
+    "placeReviews",
+    "latestReviews",
+)
+_REVIEW_TEXT_KEYS = (
+    "text",
+    "reviewText",
+    "textTranslated",
+    "comment",
+    "snippet",
+    "summary",
+)
+_REVIEW_RATING_KEYS = ("stars", "rating", "score", "reviewRating")
+_MAX_REVIEW_SAMPLE = 20
+
+_POSITIVE_THEMES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Reliable and punctual", ("on time", "punctual", "same day", "quick", "fast", "prompt")),
+    ("Professional technicians", ("professional", "technician", "team", "staff", "skilled")),
+    ("Good communication", ("responsive", "response", "communicat", "whatsapp", "called", "updated")),
+    ("Strong quality of work", ("quality", "excellent", "thorough", "clean", "fixed", "repair")),
+    ("Fair value", ("price", "value", "reasonable", "affordable", "transparent", "quote")),
+    ("Friendly service", ("friendly", "polite", "helpful", "courteous")),
+)
+
+_WATCHOUT_THEMES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Some timing complaints", ("late", "delay", "delayed", "waiting", "no show", "reschedule")),
+    ("Price concerns in a few reviews", ("expensive", "overpriced", "costly", "hidden", "charged")),
+    ("Mixed communication reports", ("no response", "unresponsive", "ignored", "rude")),
+    ("Quality issues mentioned", ("poor", "bad", "damaged", "issue", "problem", "not fixed")),
+)
+
+
+def _reviews(item: dict) -> list[dict]:
+    raw = _first(item, *_REVIEW_LIST_KEYS)
+    if isinstance(raw, dict):
+        raw = raw.get("items") or raw.get("reviews") or raw.get("data")
+    if not isinstance(raw, list):
+        return []
+    return [r for r in raw if isinstance(r, dict)][:_MAX_REVIEW_SAMPLE]
+
+
+def _review_text(review: dict) -> str:
+    value = _first(review, *_REVIEW_TEXT_KEYS)
+    return str(value).strip() if value else ""
+
+
+def _review_rating(review: dict) -> float | None:
+    return _to_float(_first(review, *_REVIEW_RATING_KEYS))
+
+
+def _theme_hits(texts: list[str], themes: tuple[tuple[str, tuple[str, ...]], ...]) -> list[str]:
+    haystack = "\n".join(texts).lower()
+    hits = [
+        label
+        for label, needles in themes
+        if any(needle in haystack for needle in needles)
+    ]
+    return hits[:4]
+
+
+def _rating_basis(rating: float | None, reviews_count: int) -> str:
+    if rating is None or reviews_count <= 0:
+        return "No public rating signal yet"
+    if reviews_count >= 250:
+        volume = "high"
+    elif reviews_count >= 50:
+        volume = "solid"
+    else:
+        volume = "limited"
+    return f"{rating:.1f} from {reviews_count} Google reviews ({volume} volume)"
+
+
+def _review_curation(
+    item: dict,
+    *,
+    rating: float | None,
+    reviews_count: int,
+    highlights: list[str] | None,
+) -> dict | None:
+    """Compact review digest for recommendation UX.
+
+    We never persist verbatim review text; this stores only themes and a plain
+    confidence note. If the actor doesn't return review bodies, the curation still
+    explains the rating/review-count signal without pretending we read reviews.
+    """
+    reviews = _reviews(item)
+    texts = [text for r in reviews if (text := _review_text(r))]
+    sampled_ratings = [r for review in reviews if (r := _review_rating(review)) is not None]
+    positives = _theme_hits(texts, _POSITIVE_THEMES)
+    watchouts = _theme_hits(texts, _WATCHOUT_THEMES)
+    if not positives and highlights:
+        positives = [f"Offers {h.lower()}" for h in highlights[:3]]
+
+    basis = _rating_basis(rating, reviews_count)
+    if texts:
+        if positives:
+            summary = f"Reviews most often point to {', '.join(p.lower() for p in positives[:2])}."
+        elif rating and rating >= 4.5:
+            summary = "Recent review text is broadly positive, but no single theme dominates."
+        else:
+            summary = "Review text is available, but themes are mixed."
+    elif rating is not None and reviews_count > 0:
+        summary = (
+            "No review text was available in the scrape; use the public rating "
+            "and review volume as the trust signal."
+        )
+    else:
+        return None
+
+    return {
+        "summary": summary,
+        "positives": positives,
+        "watchouts": watchouts,
+        "sample_size": len(texts),
+        "sample_average_rating": (
+            round(sum(sampled_ratings) / len(sampled_ratings), 1)
+            if sampled_ratings else None
+        ),
+        "rating_basis": basis,
+    }
+
+
 def normalize(
     item: dict, *, category: str, area: str, source: str, rank: int | None = None
 ) -> dict | None:
@@ -129,6 +254,9 @@ def normalize(
         return None
 
     lat, lng = _latlng(item)
+    rating = _to_float(_first(item, "totalScore", "rating", "stars"))
+    reviews_count = _to_int(_first(item, "reviewsCount", "reviews", "userRatingCount"))
+    highlights = _highlights(item)
     return {
         "name": str(name)[:255],
         "category": category,
@@ -138,8 +266,8 @@ def normalize(
         "address": _first(item, "address", "street"),
         "lat": lat,
         "lng": lng,
-        "rating": _to_float(_first(item, "totalScore", "rating", "stars")),
-        "reviews_count": _to_int(_first(item, "reviewsCount", "reviews", "userRatingCount")),
+        "rating": rating,
+        "reviews_count": reviews_count,
         "phone": _first(item, "phone", "phoneUnformatted"),
         "whatsapp": _whatsapp(_first(item, "phoneUnformatted", "phone")),
         "website": (str(_first(item, "website", "webUrl") or "")[:1024]) or None,
@@ -148,7 +276,10 @@ def normalize(
         "price_level": (str(_first(item, "price", "priceLevel") or "")[:16]) or None,
         "photo_url": _photo(item),
         "hours": _hours(item),
-        "highlights": _highlights(item),
+        "highlights": highlights,
+        "review_curation": _review_curation(
+            item, rating=rating, reviews_count=reviews_count, highlights=highlights
+        ),
         "google_rank": _to_int(item.get("rank")) or rank,
         "is_sponsored": bool(_first(item, "isAdvertisement", "isAd", "sponsored") or False),
         "source": source,
@@ -160,6 +291,7 @@ async def _scrape_cell(category: Category, area: str, *, per_cell: int) -> list[
     actor = settings.APIFY_MAPS_ACTOR
     if not actor:
         raise RuntimeError("No Apify maps actor configured (set APIFY_MAPS_ACTOR)")
+    scrape_details = settings.SERVICES_SCRAPE_DETAILS or settings.SERVICES_MAX_REVIEWS > 0
     run_input = {
         "searchStringsArray": [search_term(category, area)],
         "maxCrawledPlacesPerSearch": per_cell,
@@ -168,8 +300,17 @@ async def _scrape_cell(category: Category, area: str, *, per_cell: int) -> list[
         "skipClosedPlaces": True,
         # Opening hours require opening each place's detail page (the costliest
         # toggle); gated so re-seeds can run fast without it.
-        "scrapePlaceDetailPage": settings.SERVICES_SCRAPE_DETAILS,
+        "scrapePlaceDetailPage": scrape_details,
     }
+    if settings.SERVICES_MAX_REVIEWS > 0:
+        run_input.update(
+            {
+                "maxReviews": settings.SERVICES_MAX_REVIEWS,
+                "reviewsSort": "mostRelevant",
+                "reviewsOrigin": "google",
+                "scrapeReviewsPersonalData": False,
+            }
+        )
     return await apify_client.run_actor(actor, run_input, timeout=_CELL_TIMEOUT)
 
 

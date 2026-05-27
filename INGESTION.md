@@ -129,8 +129,9 @@ served via GET /api/v1/services?category=&area=  ·  ranked score desc (google_r
   aged past `SERVICES_TTL_DAYS` (30) — cell freshness is read straight off `max(fetched_at)` per
   `(category, area)` (`providers.cell_freshness`), so there's no separate bookkeeping table. Wired to a
   **monthly** Railway cron (`railway.refresh-services.json`, `0 3 1 * *`). Seed/refresh both reuse `APIFY_TOKEN`.
-  The detail-page scrape (opening hours) is the costliest toggle and is gated by `SERVICES_SCRAPE_DETAILS`
-  (default on) so re-seeds can run fast/cheap without it.
+  The detail-page scrape (opening hours/review samples) is the costliest toggle and is gated by
+  `SERVICES_SCRAPE_DETAILS`; `SERVICES_MAX_REVIEWS` controls the small Google-review sample used for
+  non-verbatim review curation. Keep it low, or set it to `0` for cheap re-seeds.
 - **Retiring stale listings (mark-and-sweep).** `fetched_at` *is* "last seen in a scrape" (the upsert only
   bumps it when a provider appears). After a cell is scraped, `providers.retire_stale` **soft-hides**
   (`is_active=False`, never deletes) any provider in *that cell* whose `fetched_at` is older than

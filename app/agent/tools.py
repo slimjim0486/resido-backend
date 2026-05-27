@@ -251,7 +251,7 @@ TOOLS: list[dict] = [
     },
     {
         "name": "find_services",
-        "description": "Find ranked local service providers in Dubai (cleaning, AC repair, handyman, plumbing, electrician, movers, pest control, maid service, car service, laundry). Use this when the user needs a home/living service. Returns providers sorted by a trust score (rating weighted by review count); filter by area, minimum rating, or budget.",
+        "description": "Find ranked local service providers in Dubai (cleaning, AC repair, handyman, plumbing, electrician, movers, pest control, maid service, car service, laundry). Use this when the user needs a home/living service. Returns providers sorted by a trust score (rating weighted by review count), plus review curation when available; filter by area, minimum rating, or budget.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -669,6 +669,7 @@ async def execute_tool(
                         "price_unit": p.price_unit,
                         "price_notes": p.price_notes,
                         "highlights": p.highlights,
+                        "review_curation": p.review_curation,
                         "phone": p.phone,
                         "whatsapp": p.whatsapp,
                         "website": p.website,
@@ -679,13 +680,16 @@ async def execute_tool(
                 "count": len(items),
                 "note": "Ranked by trust score (rating weighted by review count). Don't dump the list — "
                 "lead with the single best pick (1-2 max), giving its rating + review count as the trust "
-                "signal and the advertised price when present (say so when it isn't). Area is a soft boost, "
-                "not a filter: results may sit outside the user's exact area (home services travel) — if so, "
-                "say the provider covers/comes out to their area rather than implying it's local. Then drive "
-                "to the action: offer to draft a quote via create_lead (pass the chosen provider's `id` and a "
-                "short `need`) with the user's consent — this drafts a message they send themselves; it does "
-                "NOT contact the provider for them. Only quote a provider's phone/website using the values in "
-                "this result; never invent contact details.",
+                "signal and the advertised price when present (say so when it isn't). Use review_curation "
+                "to explain the choice when present: positives are recurring themes, watchouts are tradeoffs, "
+                "and sample_size says whether actual review text was available. If sample_size is 0, describe "
+                "it as rating-volume evidence, not as review-text analysis. Area is a soft boost, not a filter: "
+                "results may sit outside the user's exact area (home services travel) — if so, say the provider "
+                "covers/comes out to their area rather than implying it's local. Then drive to the action: offer "
+                "to draft a quote via create_lead (pass the chosen provider's `id` and a short `need`) with the "
+                "user's consent — this drafts a message they send themselves; it does NOT contact the provider "
+                "for them. Only quote a provider's phone/website using the values in this result; never invent "
+                "contact details.",
             },
             [],
             None,
