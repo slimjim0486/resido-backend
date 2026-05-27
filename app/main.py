@@ -9,6 +9,10 @@ from app.api.v1 import api_router
 from app.config import settings
 from app.core.logging import configure_logging, get_logger
 from app.core.redis import close_redis, init_redis
+from app.services.deduplicator_scheduler import (
+    start_deduplicator_scheduler,
+    stop_deduplicator_scheduler,
+)
 from app.services.event_feed_scheduler import start_event_feed_scheduler, stop_event_feed_scheduler
 
 configure_logging()
@@ -25,7 +29,9 @@ async def lifespan(app: FastAPI):
     )
     await init_redis()
     events_feed_task = start_event_feed_scheduler()
+    deduplicator_task = start_deduplicator_scheduler()
     yield
+    await stop_deduplicator_scheduler(deduplicator_task)
     await stop_event_feed_scheduler(events_feed_task)
     await close_redis()
     logger.info("shutdown")

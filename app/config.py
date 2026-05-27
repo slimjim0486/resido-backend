@@ -110,6 +110,11 @@ class Settings(BaseSettings):
     # Daily cleanup removes only high-confidence cross-source duplicates. Events
     # are deleted; providers are soft-hidden to preserve durable attribution.
     DEDUPLICATOR_CONFIDENCE_THRESHOLD: float = 0.90
+    # Reliability fallback for content dedupe. Railway cron should run
+    # scripts/deduplicate.py daily, but the web service can also run it if the
+    # cron service is missing. Startup run catches missed jobs after deploy.
+    DEDUPLICATOR_AUTORUN: bool = True
+    DEDUPLICATOR_RUN_HOUR_DUBAI: int = 8
 
     # ─── Object storage: Cloudflare R2 (scraped-image mirroring) ───
     # Scraped image URLs (Google Maps photos, ticket-site images) are short-lived
