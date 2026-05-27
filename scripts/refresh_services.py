@@ -15,6 +15,7 @@ from app.config import settings
 from app.database import async_session_maker
 from app.ingestion import providers_maps
 from app.services import providers as providers_service
+from scripts.seed_services import curated_pet_adoption_rows
 
 
 async def run(ttl_days: int, limit: int | None) -> None:
@@ -31,7 +32,11 @@ async def run(ttl_days: int, limit: int | None) -> None:
             return
         print(f"Refresh: {len(due)} cell(s) due (TTL {ttl_days}d). Scraping…")
         inserted = await providers_maps.ingest_grid(session, cells=due)
-        print(f"Refresh: scraped {len(due)} cell(s); {inserted} new provider(s) inserted.")
+        curated = await providers_service.upsert_providers(session, curated_pet_adoption_rows())
+        print(
+            f"Refresh: scraped {len(due)} cell(s); {inserted} new provider(s) inserted; "
+            f"upserted {curated} curated pet adoption resource(s)."
+        )
 
 
 def main() -> None:

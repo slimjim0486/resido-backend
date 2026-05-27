@@ -101,33 +101,35 @@ served directly to Home hero · cached to each event's end date (self-expiring)
 ## 4b. Services — local provider directory (Tier A-style, monetization surface)
 
 Powers the **Services vertical** — Resido's lead-gen surface (`SPEC.md` §1 monetization).
-High-intent local providers (cleaning, AC repair, handyman, movers, …), discoverable, ranked,
+High-intent local providers (cleaning, AC repair, handyman, movers, pets, …), discoverable, ranked,
 with a callback/quote CTA. **No embeddings, no RAG** — structured rows, like Tier B — but modeled
 on **Tier A economics**: a *bounded grid, slow TTL, durable rows*, the opposite of the churny feed.
 
 ```
-for (category × area) in a bounded grid      ── ~10 cats × ~10 areas = ~100 cells
+for (category/subcategory × area) in a bounded grid
         │
         ▼
 Apify compass/crawler-google-places   ── 1 run/cell, MONTHLY (only TTL-elapsed cells)
         │
         ▼
-normalize defensively → Bayesian score → upsert service_providers (key: place_id)
+normalize defensively → Bayesian score → upsert service_providers
+                                      (key: place_id + category + subcategory)
         │
         ▼
-served via GET /api/v1/services?category=&area=  ·  ranked score desc (google_rank tiebreaker)
+served via GET /api/v1/services?category=&subcategory=&area=
 ```
 
 - **Why Apify (not Exa) here:** Google Maps is the canonical, structured source for local businesses
   (rating, review count, phone, hours, geo) and is JS-hard/anti-bot — exactly Tier 2's "structured/recurring
   scrape" lane. The off-the-shelf `compass/crawler-google-places` actor is used via the existing
   `apify_client.run_actor` (reuses `APIFY_TOKEN`; actor configurable via `APIFY_MAPS_ACTOR`).
-- **Bounded grid = the cost lever.** The (category × area) registry (`app/ingestion/services_registry.py`)
-  is finite. `SERVICES_PER_CELL` (~15) caps places/cell. ~100 cells × ~15 ≈ 1.5k places **once a month** at
-  ~$4/1k — a few dollars/month, cached as durable rows. Not daily; that's the whole point.
+- **Bounded grid = the cost lever.** The category/subcategory × area registry
+  (`app/ingestion/services_registry.py`) is finite. `SERVICES_PER_CELL` (~15) caps places/cell; shelters
+  use a citywide cell rather than every area. The result is still a few thousand places **once a month**
+  at low Maps-actor cost, cached as durable rows. Not daily; that's the whole point.
 - **TTL refresh, Tier-A style.** `scripts/refresh_services.py` re-scrapes only cells whose freshest row has
   aged past `SERVICES_TTL_DAYS` (30) — cell freshness is read straight off `max(fetched_at)` per
-  `(category, area)` (`providers.cell_freshness`), so there's no separate bookkeeping table. Wired to a
+  `(category, subcategory, area)` (`providers.cell_freshness`), so there's no separate bookkeeping table. Wired to a
   **monthly** Railway cron (`railway.refresh-services.json`, `0 3 1 * *`). Seed/refresh both reuse `APIFY_TOKEN`.
   The detail-page scrape (opening hours/review samples) is the costliest toggle and is gated by
   `SERVICES_SCRAPE_DETAILS`; `SERVICES_MAX_REVIEWS` controls the small Google-review sample used for
@@ -153,6 +155,14 @@ served via GET /api/v1/services?category=&area=  ·  ranked score desc (google_r
   rows with **no DB write** (the read-only validation pattern).
 - **Agent + monetization.** `find_services(category, area)` returns the top ranked providers to the co-pilot;
   `create_lead` accepts a service category + provider context so the agent can offer a callback/quote → `leads`.
+
+- **Pets vertical.** Pets is a parent service category with subcategories (`vets`, `emergency_vets`,
+  `boarding_hotels`, `sitters_walkers`, `grooming`, `shelters_adoption`) so one broad "pet services"
+  scrape does not mix clinics, hotels, walkers, groomers, and rescues into one noisy ranking. Commercial
+  pet providers use the same Maps → review curation → trust-score path. Shelters/adoption are different:
+  they are civic-value listings, not rating-led businesses, so the broad Pets browse keeps them visible
+  even when unrated, and seed/refresh upserts the official Dubai Municipality adoption resource as a
+  curated fallback. The API accepts `subcategory=` for precise filtering.
 
 **Shipped 2026-05-25:** `service_providers` table + migration `0004_service_providers`; `app/services/providers.py`
 (upsert/list + Bayesian score + `cell_freshness`); `app/ingestion/providers_maps.py` + `services_registry.py`;

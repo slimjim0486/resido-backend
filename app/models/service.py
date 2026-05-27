@@ -33,6 +33,7 @@ class ServiceProvider(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         # Browse is always scoped to a (category, area) cell.
         Index("ix_service_providers_cat_area", "category", "area"),
+        Index("ix_service_providers_cat_subcat_area", "category", "subcategory", "area"),
         # Default ranking is score desc within a category (see migration: DESC).
         Index("ix_service_providers_cat_score", "category", "score"),
     )
@@ -40,6 +41,9 @@ class ServiceProvider(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     # Our grid category key (cleaning, ac_repair, …), not Google's freeform label.
     category: Mapped[str] = mapped_column(String(80), nullable=False)
+    # Optional finer grouping inside a category. Pets uses this heavily
+    # (vets, boarding, shelters/adoption); legacy home services use "general".
+    subcategory: Mapped[str] = mapped_column(String(80), default="general", nullable=False)
     area: Mapped[str | None] = mapped_column(String(120))
     address: Mapped[str | None] = mapped_column(Text())
     lat: Mapped[float | None] = mapped_column(Float())
@@ -51,7 +55,7 @@ class ServiceProvider(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     website: Mapped[str | None] = mapped_column(String(1024))
     maps_url: Mapped[str | None] = mapped_column(String(1024))
     # Google's stable place identifier — the upsert key (dedupes across cells).
-    place_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    place_id: Mapped[str] = mapped_column(String(255), nullable=False)
     price_level: Mapped[str | None] = mapped_column(String(16))  # "$", "$$", …
     # Real advertised pricing, extracted from the provider's own website by Claude
     # (Haiku) — see ingestion/providers_pricing.py. Google Maps never populates

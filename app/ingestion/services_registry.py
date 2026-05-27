@@ -11,9 +11,16 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Category:
-    key: str  # stored on the row + used in API/agent filters
+    key: str  # registry/dry-run key
     label: str  # human label for the UI
     query: str  # the Google Maps search term (prepended to the area)
+    category: str | None = None  # stored/API parent category; defaults to key
+    subcategory: str = "general"
+    areas: tuple[str, ...] | None = None
+
+    @property
+    def row_category(self) -> str:
+        return self.category or self.key
 
 
 # ~10 high-intent home/living service categories to start.
@@ -28,6 +35,43 @@ CATEGORIES: list[Category] = [
     Category("maid_service", "Maid Service", "maid service"),
     Category("car_service", "Car Service", "car service and repair"),
     Category("laundry", "Laundry", "laundry and dry cleaning"),
+    Category("pets_vets", "Vets", "veterinary clinic", category="pets", subcategory="vets"),
+    Category(
+        "pets_emergency_vets",
+        "Emergency Vets",
+        "24 hour emergency vet",
+        category="pets",
+        subcategory="emergency_vets",
+    ),
+    Category(
+        "pets_boarding_hotels",
+        "Pet Hotels",
+        "pet boarding and pet hotel",
+        category="pets",
+        subcategory="boarding_hotels",
+    ),
+    Category(
+        "pets_sitters_walkers",
+        "Pet Sitters",
+        "pet sitting and dog walking",
+        category="pets",
+        subcategory="sitters_walkers",
+    ),
+    Category(
+        "pets_grooming",
+        "Pet Grooming",
+        "pet grooming",
+        category="pets",
+        subcategory="grooming",
+    ),
+    Category(
+        "pets_shelters_adoption",
+        "Shelters & Adoption",
+        "animal shelter pet adoption animal rescue",
+        category="pets",
+        subcategory="shelters_adoption",
+        areas=("Dubai",),
+    ),
 ]
 
 # ~10 Dubai areas where expats cluster.
@@ -49,9 +93,11 @@ CATEGORY_BY_KEY: dict[str, Category] = {c.key: c for c in CATEGORIES}
 
 def search_term(category: Category, area: str) -> str:
     """e.g. 'AC repair in Dubai Marina, Dubai' — the Google Maps query for a cell."""
+    if area.strip().lower() == "dubai":
+        return f"{category.query} in Dubai"
     return f"{category.query} in {area}, Dubai"
 
 
 def grid() -> list[tuple[Category, str]]:
     """Every (category, area) cell in the registry."""
-    return [(c, area) for c in CATEGORIES for area in AREAS]
+    return [(c, area) for c in CATEGORIES for area in (c.areas or tuple(AREAS))]

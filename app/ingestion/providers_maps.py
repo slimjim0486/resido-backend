@@ -143,6 +143,9 @@ _POSITIVE_THEMES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Strong quality of work", ("quality", "excellent", "thorough", "clean", "fixed", "repair")),
     ("Fair value", ("price", "value", "reasonable", "affordable", "transparent", "quote")),
     ("Friendly service", ("friendly", "polite", "helpful", "courteous")),
+    ("Gentle animal handling", ("gentle", "caring", "compassion", "kind", "calm", "handled")),
+    ("Clean pet facilities", ("clean facility", "hygien", "clean cages", "well kept")),
+    ("Helpful pet updates", ("updates", "photos", "videos", "kept us informed")),
 )
 
 _WATCHOUT_THEMES: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -150,6 +153,8 @@ _WATCHOUT_THEMES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Price concerns in a few reviews", ("expensive", "overpriced", "costly", "hidden", "charged")),
     ("Mixed communication reports", ("no response", "unresponsive", "ignored", "rude")),
     ("Quality issues mentioned", ("poor", "bad", "damaged", "issue", "problem", "not fixed")),
+    ("Animal-care concerns mentioned", ("rough", "neglect", "unclean", "dirty kennel", "stress")),
+    ("Upselling concerns in a few reviews", ("upsell", "unnecessary test", "extra charge")),
 )
 
 
@@ -199,6 +204,7 @@ def _review_curation(
     rating: float | None,
     reviews_count: int,
     highlights: list[str] | None,
+    subcategory: str = "general",
 ) -> dict | None:
     """Compact review digest for recommendation UX.
 
@@ -211,6 +217,18 @@ def _review_curation(
     sampled_ratings = [r for review in reviews if (r := _review_rating(review)) is not None]
     positives = _theme_hits(texts, _POSITIVE_THEMES)
     watchouts = _theme_hits(texts, _WATCHOUT_THEMES)
+    if subcategory == "shelters_adoption" and not rating and reviews_count <= 0:
+        return {
+            "summary": (
+                "Shelters and adoption groups are included for civic value; compare contact details, "
+                "adoption process, and current availability rather than star ratings."
+            ),
+            "positives": ["Adoption and rescue resource"],
+            "watchouts": [],
+            "sample_size": 0,
+            "sample_average_rating": None,
+            "rating_basis": "Not ranked by rating",
+        }
     if not positives and highlights:
         positives = [f"Offers {h.lower()}" for h in highlights[:3]]
 
@@ -244,7 +262,13 @@ def _review_curation(
 
 
 def normalize(
-    item: dict, *, category: str, area: str, source: str, rank: int | None = None
+    item: dict,
+    *,
+    category: str,
+    subcategory: str,
+    area: str,
+    source: str,
+    rank: int | None = None,
 ) -> dict | None:
     """Map a loosely-shaped Maps actor item onto our ServiceProvider fields. Returns
     None when the item lacks the minimum (name + place_id) to be useful."""
@@ -260,6 +284,7 @@ def normalize(
     return {
         "name": str(name)[:255],
         "category": category,
+        "subcategory": subcategory,
         # Canonical grid area (so cell filters line up); fall back to the scraped
         # neighbourhood/city when we somehow lack it.
         "area": area or _first(item, "neighborhood", "neighbourhood", "city"),
@@ -278,7 +303,11 @@ def normalize(
         "hours": _hours(item),
         "highlights": highlights,
         "review_curation": _review_curation(
-            item, rating=rating, reviews_count=reviews_count, highlights=highlights
+            item,
+            rating=rating,
+            reviews_count=reviews_count,
+            highlights=highlights,
+            subcategory=subcategory,
         ),
         "google_rank": _to_int(item.get("rank")) or rank,
         "is_sponsored": bool(_first(item, "isAdvertisement", "isAd", "sponsored") or False),
@@ -315,12 +344,19 @@ async def _scrape_cell(category: Category, area: str, *, per_cell: int) -> list[
 
 
 def normalize_cell(
-    raw: list[dict], *, category: str, area: str, source: str
+    raw: list[dict], *, category: str, subcategory: str, area: str, source: str
 ) -> list[dict]:
     """Normalize + score a cell's raw items (no DB). Used by ingest and the dry run."""
     rows: list[dict] = []
     for i, item in enumerate(raw, start=1):
-        row = normalize(item, category=category, area=area, source=source, rank=i)
+        row = normalize(
+            item,
+            category=category,
+            subcategory=subcategory,
+            area=area,
+            source=source,
+            rank=i,
+        )
         if row:
             row["score"] = providers_service.bayesian_score(
                 row.get("rating"), row.get("reviews_count")
@@ -335,23 +371,35 @@ async def ingest_cell(
     """Scrape one (category, area) cell, normalize, and upsert. Returns inserted."""
     source = (settings.APIFY_MAPS_ACTOR or "google_maps").split("/")[-1]
     raw = await _scrape_cell(category, area, per_cell=per_cell)
-    rows = normalize_cell(raw, category=category.key, area=area, source="google_maps")
+    rows = normalize_cell(
+        raw,
+        category=category.row_category,
+        subcategory=category.subcategory,
+        area=area,
+        source="google_maps",
+    )
     # Re-host scraped Google photos in R2 (their source URLs are token-signed and
     # expire) before persisting. No-op when R2 isn't configured.
     await r2_storage.mirror_field(rows, src_field="photo_url", key_fn=_photo_key)
     # Extract real advertised pricing from each provider's website (Google Maps
     # gives none for these businesses). Mutates rows in place; no-op without a
     # Claude key or when SERVICES_EXTRACT_PRICING is off.
-    priced = await providers_pricing.enrich_pricing(rows)
+    priced = await providers_pricing.enrich_pricing(
+        [r for r in rows if r.get("subcategory") != "shelters_adoption"]
+    )
     inserted = await providers_service.upsert_providers(session, rows)
     # Reconcile this cell: providers not seen for ~2 monthly cycles get soft-hidden.
     # On a first scrape this is a no-op (survivors were just refreshed).
     retired = await providers_service.retire_stale(
-        session, category.key, area, grace_days=settings.SERVICES_STALE_GRACE_DAYS
+        session,
+        category.row_category,
+        area,
+        grace_days=settings.SERVICES_STALE_GRACE_DAYS,
+        subcategory=category.subcategory,
     )
     logger.info(
         "providers_cell",
-        category=category.key, area=area, source=source,
+        category=category.row_category, subcategory=category.subcategory, area=area, source=source,
         fetched=len(raw), kept=len(rows), priced=priced, inserted=inserted, retired=retired,
     )
     return inserted
@@ -374,7 +422,11 @@ async def ingest_grid(
         except Exception as exc:  # one bad cell must not sink the run
             await session.rollback()
             logger.warning(
-                "providers_cell_failed", category=category.key, area=area, error=str(exc)
+                "providers_cell_failed",
+                category=category.row_category,
+                subcategory=category.subcategory,
+                area=area,
+                error=str(exc),
             )
     return inserted
 
@@ -382,17 +434,23 @@ async def ingest_grid(
 async def dry_run_cell(category: Category, area: str, *, per_cell: int) -> list[dict]:
     """Read-only: scrape one cell and return normalized+scored rows. No DB write."""
     raw = await _scrape_cell(category, area, per_cell=per_cell)
-    return normalize_cell(raw, category=category.key, area=area, source="google_maps")
+    return normalize_cell(
+        raw,
+        category=category.row_category,
+        subcategory=category.subcategory,
+        area=area,
+        source="google_maps",
+    )
 
 
 def due_cells(
-    freshness: dict[tuple[str, str], datetime], *, ttl_days: int
+    freshness: dict[tuple[str, str, str], datetime], *, ttl_days: int
 ) -> list[tuple[Category, str]]:
     """Grid cells never scraped, or whose freshest row has aged past the TTL."""
     threshold = datetime.now(timezone.utc) - timedelta(days=ttl_days)
     due: list[tuple[Category, str]] = []
     for category, area in grid():
-        last = freshness.get((category.key, area))
+        last = freshness.get((category.row_category, category.subcategory, area))
         if last is None or last < threshold:
             due.append((category, area))
     return due

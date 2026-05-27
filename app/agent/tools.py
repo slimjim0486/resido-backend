@@ -251,13 +251,17 @@ TOOLS: list[dict] = [
     },
     {
         "name": "find_services",
-        "description": "Find ranked local service providers in Dubai (cleaning, AC repair, handyman, plumbing, electrician, movers, pest control, maid service, car service, laundry). Use this when the user needs a home/living service. Returns providers sorted by a trust score (rating weighted by review count), plus review curation when available; filter by area, minimum rating, or budget.",
+        "description": "Find ranked local service providers in Dubai (cleaning, AC repair, handyman, plumbing, electrician, movers, pest control, maid service, car service, laundry, pets). Use this when the user needs a home/living/pet service. Returns providers sorted by a trust score (rating weighted by review count), plus review curation when available; filter by area, minimum rating, budget, or pet subcategory. Pet shelters/adoption are included as civic resources and are not ranked by star rating.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "category": {
                     "type": "string",
-                    "description": "cleaning | ac_repair | handyman | plumbing | electrician | movers | pest_control | maid_service | car_service | laundry",
+                    "description": "cleaning | ac_repair | handyman | plumbing | electrician | movers | pest_control | maid_service | car_service | laundry | pets",
+                },
+                "subcategory": {
+                    "type": "string",
+                    "description": "For pets only: vets | emergency_vets | boarding_hotels | sitters_walkers | grooming | shelters_adoption",
                 },
                 "area": {
                     "type": "string",
@@ -647,6 +651,7 @@ async def execute_tool(
         items = await providers_service.list_providers(
             session,
             category=tool_input["category"],
+            subcategory=tool_input.get("subcategory"),
             area=tool_input.get("area"),
             area_soft=True,
             min_rating=tool_input.get("min_rating"),
@@ -660,6 +665,8 @@ async def execute_tool(
                     {
                         "id": str(p.id),
                         "name": p.name,
+                        "category": p.category,
+                        "subcategory": p.subcategory,
                         "area": p.area,
                         "rating": p.rating,
                         "reviews_count": p.reviews_count,
@@ -683,7 +690,8 @@ async def execute_tool(
                 "signal and the advertised price when present (say so when it isn't). Use review_curation "
                 "to explain the choice when present: positives are recurring themes, watchouts are tradeoffs, "
                 "and sample_size says whether actual review text was available. If sample_size is 0, describe "
-                "it as rating-volume evidence, not as review-text analysis. Area is a soft boost, not a filter: "
+                "it as rating-volume evidence, not as review-text analysis. For shelters_adoption, say it is "
+                "not ranked by rating and compare adoption process/contact details instead. Area is a soft boost, not a filter: "
                 "results may sit outside the user's exact area (home services travel) — if so, say the provider "
                 "covers/comes out to their area rather than implying it's local. Then drive to the action: offer "
                 "to draft a quote via create_lead (pass the chosen provider's `id` and a short `need`) with the "

@@ -30,6 +30,7 @@ async def list_services(
     session: Session,
     user: OptionalUser,
     category: str | None = Query(default=None),
+    subcategory: str | None = Query(default=None),
     area: str | None = Query(default=None),
     min_rating: float | None = Query(default=None, ge=0, le=5),
     q: str | None = Query(default=None, description="Keyword search over the provider name"),
@@ -45,6 +46,7 @@ async def list_services(
     items = await providers_service.list_providers(
         session,
         category=category,
+        subcategory=subcategory,
         area=area,
         min_rating=min_rating,
         query=q,

@@ -27,8 +27,8 @@ _MIN_INPUT_CHARS = 200   # too short to plausibly hold pricing
 # hammering the fetch providers or the Anthropic rate limit.
 _DEFAULT_CONCURRENCY = 5
 
-PRICING_SYSTEM = """You extract advertised service prices from the text of a Dubai home-services \
-provider's website (cleaning, AC repair, handyman, movers, laundry, etc). Call emit_pricing.
+PRICING_SYSTEM = """You extract advertised service prices from the text of a Dubai local-services \
+provider's website (cleaning, AC repair, handyman, movers, laundry, pet vets, pet hotels, grooming, etc). Call emit_pricing.
 
 Rules:
 - Return ONLY prices the page actually states. NEVER invent, estimate, or convert a number.

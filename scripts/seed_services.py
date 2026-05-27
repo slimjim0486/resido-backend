@@ -21,6 +21,41 @@ from app.ingestion.services_registry import CATEGORIES, CATEGORY_BY_KEY
 from app.services import providers as providers_service
 
 
+def curated_pet_adoption_rows() -> list[dict]:
+    """Official/civic adoption resources that should remain visible even when
+    Maps ratings are sparse. These are not ranked by star rating."""
+    return [
+        {
+            "name": "Dubai Municipality Adopt Pets",
+            "category": "pets",
+            "subcategory": "shelters_adoption",
+            "area": "Dubai",
+            "address": "Dubai, UAE",
+            "rating": None,
+            "reviews_count": 0,
+            "website": "https://www.dm.gov.ae/dubai-municipality-services/adopt-pets/",
+            "maps_url": "https://www.google.com/maps/search/?api=1&query=Dubai%20Municipality%20pet%20adoption",
+            "place_id": "official-dubai-municipality-adopt-pets",
+            "hours": [],
+            "highlights": ["Official adoption resource", "Shelters & adoption"],
+            "review_curation": {
+                "summary": (
+                    "Official adoption resource. Compare adoption steps, current availability, "
+                    "and contact instructions rather than star ratings."
+                ),
+                "positives": ["Official Dubai Municipality service"],
+                "watchouts": [],
+                "sample_size": 0,
+                "sample_average_rating": None,
+                "rating_basis": "Not ranked by rating",
+            },
+            "google_rank": 0,
+            "is_sponsored": False,
+            "source": "official_directory",
+        }
+    ]
+
+
 def _sample_providers() -> list[dict]:
     """A handful of representative Dubai providers so the directory lights up for a
     demo. Ratings/review counts vary so the Bayesian ranking is visibly at work."""
@@ -38,14 +73,23 @@ def _sample_providers() -> list[dict]:
         ("maid_service", "Jumeirah", "Pearl Maids Service", 4.6, 318, "$$"),
         ("car_service", "Al Quoz", "AutoCare Garage Dubai", 4.7, 905, "$$"),
         ("laundry", "Dubai Marina", "Crisp & Clean Laundry", 4.5, 274, "$"),
+        ("pets", "Dubai", "Dubai Municipality Adopt Pets", None, 0, ""),
+        ("pets", "Jumeirah", "Jumeirah Veterinary Clinic", 4.7, 610, "$$"),
+        ("pets", "Dubai Hills", "Pawsome Pet Hotel Dubai", 4.6, 188, "$$"),
     ]
     rows: list[dict] = []
     for i, (cat, area, name, rating, reviews, price) in enumerate(raw, start=1):
         slug = name.lower().replace(" ", "-").replace("&", "and")
+        subcategory = {
+            "Dubai Municipality Adopt Pets": "shelters_adoption",
+            "Jumeirah Veterinary Clinic": "vets",
+            "Pawsome Pet Hotel Dubai": "boarding_hotels",
+        }.get(name, "general")
         rows.append(
             {
                 "name": name,
                 "category": cat,
+                "subcategory": subcategory,
                 "area": area,
                 "address": f"{area}, Dubai, UAE",
                 "rating": rating,
@@ -58,12 +102,25 @@ def _sample_providers() -> list[dict]:
                 "price_level": price,
                 "hours": [{"day": "Mon–Sat", "hours": "9 AM–9 PM"}],
                 "review_curation": {
-                    "summary": "Customers tend to mention reliable work and clear communication.",
-                    "positives": ["Reliable and punctual", "Good communication"],
+                    "summary": (
+                        "Shelters and adoption groups are included for civic value; compare process "
+                        "and current availability rather than star ratings."
+                        if subcategory == "shelters_adoption"
+                        else "Customers tend to mention reliable work and clear communication."
+                    ),
+                    "positives": (
+                        ["Adoption and rescue resource"]
+                        if subcategory == "shelters_adoption"
+                        else ["Reliable and punctual", "Good communication"]
+                    ),
                     "watchouts": ["Limited review volume"] if reviews < 25 else [],
                     "sample_size": 8 if reviews >= 25 else 0,
                     "sample_average_rating": rating if reviews >= 25 else None,
-                    "rating_basis": f"{rating:.1f} from {reviews} Google reviews",
+                    "rating_basis": (
+                        "Not ranked by rating"
+                        if subcategory == "shelters_adoption"
+                        else f"{rating:.1f} from {reviews} Google reviews"
+                    ),
                 },
                 "google_rank": i,
                 "is_sponsored": False,
@@ -98,7 +155,11 @@ async def _seed() -> None:
     async with async_session_maker() as session:
         if settings.APIFY_TOKEN:
             n = await providers_maps.ingest_grid(session)
-            print(f"Apify ({settings.APIFY_MAPS_ACTOR}): inserted {n} new providers across the grid.")
+            curated = await providers_service.upsert_providers(session, curated_pet_adoption_rows())
+            print(
+                f"Apify ({settings.APIFY_MAPS_ACTOR}): inserted {n} new providers across the grid; "
+                f"upserted {curated} curated pet adoption resource(s)."
+            )
         else:
             n = await providers_service.upsert_providers(session, _sample_providers())
             print(

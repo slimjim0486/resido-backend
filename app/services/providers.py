@@ -24,12 +24,14 @@ BAYES_C = 4.2  # assumed global mean rating across Dubai service providers
 # Fields an ingestion source may set — a noisy actor payload can't write arbitrary
 # attributes onto the row. (score is derived, not source-provided.)
 _WRITABLE = {
-    "name", "category", "area", "address", "lat", "lng", "rating", "reviews_count",
+    "name", "category", "subcategory", "area", "address", "lat", "lng", "rating", "reviews_count",
     "phone", "whatsapp", "website", "maps_url", "price_level", "photo_url", "hours",
     "highlights", "review_curation", "google_rank", "is_sponsored", "source",
     # Website-extracted pricing (see ingestion/providers_pricing.py).
     "price_from", "price_to", "price_unit", "price_notes", "price_fetched_at",
 }
+
+NON_RATING_SUBCATEGORIES = {"shelters_adoption"}
 
 
 def bayesian_score(rating: float | None, reviews_count: int | None) -> float:
@@ -50,6 +52,7 @@ async def list_providers(
     session: AsyncSession,
     *,
     category: str | None = None,
+    subcategory: str | None = None,
     area: str | None = None,
     area_soft: bool = False,
     min_rating: float | None = None,
@@ -82,12 +85,22 @@ async def list_providers(
     stmt = select(ServiceProvider).where(ServiceProvider.is_active.is_(True))
     if category:
         stmt = stmt.where(ServiceProvider.category == category)
-    if min_rating is not None:
+    if subcategory:
+        stmt = stmt.where(ServiceProvider.subcategory == subcategory)
+    rating_based = subcategory not in NON_RATING_SUBCATEGORIES
+    if min_rating is not None and rating_based:
         stmt = stmt.where(ServiceProvider.rating >= min_rating)
     if query and query.strip():
         stmt = stmt.where(ServiceProvider.name.ilike(f"%{query.strip()}%"))
 
     order_by = []
+    if category == "pets" and subcategory is None:
+        # Shelters/adoption are civic-value listings, not commercial providers.
+        # Keep them visible in a broad Pets browse instead of letting unrated
+        # rows sink behind every paid service by score.
+        order_by.append(
+            case((ServiceProvider.subcategory == "shelters_adoption", 0), else_=1)
+        )
     if area and area.strip():
         area_match = ServiceProvider.area.ilike(f"%{area.strip()}%")
         if area_soft:
@@ -136,13 +149,18 @@ async def upsert_provider(session: AsyncSession, data: dict) -> bool:
     place_id = data.get("place_id")
     if not place_id or not data.get("name"):
         return False
+    category = data.get("category")
+    subcategory = data.get("subcategory") or "general"
     result = await session.execute(
-        select(ServiceProvider).where(ServiceProvider.place_id == place_id)
+        select(ServiceProvider)
+        .where(ServiceProvider.place_id == place_id)
+        .where(ServiceProvider.category == category)
+        .where(ServiceProvider.subcategory == subcategory)
     )
     provider = result.scalar_one_or_none()
     inserted = provider is None
     if provider is None:
-        provider = ServiceProvider(place_id=place_id)
+        provider = ServiceProvider(place_id=place_id, category=category, subcategory=subcategory)
         session.add(provider)
     for field, value in data.items():
         if field in _WRITABLE:
@@ -165,7 +183,12 @@ async def upsert_providers(session: AsyncSession, items: list[dict]) -> int:
 
 
 async def retire_stale(
-    session: AsyncSession, category: str, area: str, *, grace_days: int
+    session: AsyncSession,
+    category: str,
+    area: str,
+    *,
+    grace_days: int,
+    subcategory: str | None = None,
 ) -> int:
     """Soft-hide providers in a *just-scraped* cell that haven't been seen in a
     scrape for ``grace_days`` (≈ 2 monthly cycles). Run right after the cell's
@@ -179,22 +202,25 @@ async def retire_stale(
         .where(ServiceProvider.area == area)
         .where(ServiceProvider.is_active.is_(True))
         .where(ServiceProvider.fetched_at < threshold)
-        .values(is_active=False)
     )
+    if subcategory:
+        stmt = stmt.where(ServiceProvider.subcategory == subcategory)
+    stmt = stmt.values(is_active=False)
     result = await session.execute(stmt)
     await session.commit()
     return result.rowcount or 0
 
 
-async def cell_freshness(session: AsyncSession) -> dict[tuple[str, str], datetime]:
+async def cell_freshness(session: AsyncSession) -> dict[tuple[str, str, str], datetime]:
     """Most-recent ``fetched_at`` per (category, area) cell.
 
     The Tier A-style TTL refresh uses this to re-scrape only cells whose data has
     aged past the TTL — no separate bookkeeping table needed."""
     stmt = select(
         ServiceProvider.category,
+        ServiceProvider.subcategory,
         ServiceProvider.area,
         func.max(ServiceProvider.fetched_at),
-    ).group_by(ServiceProvider.category, ServiceProvider.area)
+    ).group_by(ServiceProvider.category, ServiceProvider.subcategory, ServiceProvider.area)
     result = await session.execute(stmt)
-    return {(cat, area or ""): ts for cat, area, ts in result.all()}
+    return {(cat, subcat or "general", area or ""): ts for cat, subcat, area, ts in result.all()}

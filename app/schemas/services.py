@@ -10,6 +10,7 @@ class ServiceProviderOut(ORMBaseModel):
     id: UUID
     name: str
     category: str
+    subcategory: str = "general"
     area: str | None = None
     address: str | None = None
     lat: float | None = None
