@@ -4,6 +4,9 @@ Read model (``PreferenceOut``) is assembled from the PreferenceProfile in the AP
 layer; the request bodies drive the note CRUD + the pause control.
 """
 
+from typing import Literal
+from uuid import UUID
+
 from pydantic import BaseModel, Field
 
 
@@ -43,3 +46,11 @@ class PreferenceNoteUpdate(BaseModel):
 
 class PreferenceSettingsUpdate(BaseModel):
     personalization_paused: bool
+
+
+class SignalIn(BaseModel):
+    """A lightweight interaction the client reports (e.g. opening a detail screen)."""
+
+    item_type: Literal["event", "service"]
+    item_id: UUID
+    kind: Literal["view", "dismiss"] = "view"

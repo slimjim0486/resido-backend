@@ -8,6 +8,7 @@ corpus, so RAG would be wasted spend that goes stale.
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Index, Numeric, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -38,6 +39,11 @@ class Event(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # keyword scan, or Claude extraction). NULL = unknown — only TRUE rows match a
     # "kid-friendly" filter, so unknowns aren't falsely promoted or excluded.
     family_friendly: Mapped[bool | None] = mapped_column(Boolean)
+    # Free-form taste tags (cuisine, vibe, genre — "brunch", "jazz", "rooftop",
+    # "vegetarian-friendly") extracted by Claude at ingestion. Not for filtering;
+    # feeds the personalisation tag_weights so "you like jazz" can rank up. NULL/[]
+    # = none (older rows until re-ingested) — degrades to no tag signal.
+    tags: Mapped[list | None] = mapped_column(JSONB)
     starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     source: Mapped[str] = mapped_column(String(120), nullable=False)

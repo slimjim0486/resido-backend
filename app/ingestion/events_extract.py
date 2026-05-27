@@ -34,6 +34,10 @@ date is stated — NEVER guess a date.
 - family_friendly: true if it's clearly suitable for kids/families (e.g. mentions \
 children, all ages, a theme park, a family day); false if it's clearly adults-only \
 (18+/21+, nightclub, ladies' night, bottomless brunch). Omit if unclear — don't guess.
+- tags: 2-5 short lowercase taste tags capturing cuisine, vibe, or genre — what \
+someone who'd love this would search for (e.g. "brunch", "jazz", "rooftop", \
+"vegetarian-friendly", "live music", "desert", "family day"). Single words or short \
+phrases, lowercase, no '#'. Omit the array if nothing specific stands out — never invent.
 - If the page has no concrete events, return an empty list."""
 
 EMIT_EVENTS_TOOL = {
@@ -59,6 +63,11 @@ EMIT_EVENTS_TOOL = {
                             "description": "true if clearly kid/family-suitable, false if clearly adults-only; omit if unclear",
                         },
                         "booking_url": {"type": "string", "description": "specific ticket/event link if present"},
+                        "tags": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "2-5 short lowercase taste tags (cuisine/vibe/genre), e.g. ['brunch','rooftop']",
+                        },
                     },
                     "required": ["title"],
                 },

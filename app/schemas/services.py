@@ -36,3 +36,6 @@ class ServiceProviderOut(ORMBaseModel):
     # When this row was last seen in a scrape — drives the "Updated <month>"
     # freshness signal in the app (turns age into a trust cue, per INGESTION.md).
     fetched_at: datetime
+    # Why this ranked up for the signed-in user, e.g. "In Dubai Marina" — set only
+    # on a personalised listing (null otherwise). Drives the "Because you…" chip.
+    reason: str | None = None

@@ -42,7 +42,7 @@ def weekday_index(value) -> int | None:
 # write arbitrary attributes onto the row.
 _WRITABLE = {
     "title", "description", "category", "venue", "area", "image_url",
-    "price_from", "price_min", "family_friendly",
+    "price_from", "price_min", "family_friendly", "tags",
     "starts_at", "ends_at", "source", "expires_at", "is_published",
 }
 

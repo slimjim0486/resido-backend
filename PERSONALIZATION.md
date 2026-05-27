@@ -183,6 +183,12 @@ weights · `_PROVIDER_BOOST` (0.12) · `_MIN_WEIGHT` (0.05, map noise floor).
   richer `summary` + nuanced `inferred` notes; degrades to the templated summary with no key.
 - **Phase 2 — remaining:** the Flutter "What Resido knows about you" screen on top of the
   `/me/preferences` API (summary + chips + editable notes + pause/reset).
+- **Phase 3 (done):** legibility — `explain_event`/`explain_provider` return a "Because you…"
+  reason, surfaced as a `reason` field on `EventOut`/`ServiceProviderOut` and rendered as a
+  coral chip on the cards + a "For you this week" Home header; `events.tags` (migration 0013,
+  Haiku extraction in `events_extract`/`events_exa`) feeding `tag_weights` and a re-weighted
+  `score_event`; `view`/`dismiss` signals via `capture_interaction` + `POST /me/signals`, fired
+  fire-and-forget from the event/provider detail screens.
 - **Phase 3:** `events.tags` populated by the existing Haiku events extraction (feeds
   `tag_weights` for "jazz/brunch/vegetarian"); `view`/`dismiss` signals from detail
   screens; "Because you…" reason strings on cards.

@@ -23,3 +23,6 @@ class EventOut(ORMBaseModel):
     starts_at: datetime | None = None
     ends_at: datetime | None = None
     source: str
+    # Why this ranked up for the signed-in user, e.g. "In Dubai Marina" — set only
+    # on a personalised feed (null otherwise). Drives the "Because you…" chip.
+    reason: str | None = None

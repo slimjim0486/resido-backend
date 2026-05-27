@@ -61,4 +61,9 @@ async def list_events(
         limit=limit,
         personalize=personalize,
     )
-    return APIResponse(data=[EventOut.model_validate(e) for e in items])
+    out = []
+    for e in items:
+        eo = EventOut.model_validate(e)
+        eo.reason = preferences_service.explain_event(personalize, e)
+        out.append(eo)
+    return APIResponse(data=out)

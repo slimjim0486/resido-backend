@@ -58,8 +58,16 @@ HALF_LIFE_DAYS = 60.0
 # signals → 0.5 strength, ~15 → 0.75. Below that we lean on the base ranking.
 ALPHA_K = 5.0
 
-# Component weights inside an event taste-match (sum ≈ 1).
-_EV_W = {"category": 0.40, "area": 0.25, "family": 0.15, "weekday": 0.10, "budget": 0.10}
+# Component weights inside an event taste-match (sum ≈ 1). Tags carry real weight
+# (they're the nuance — jazz/brunch/vegetarian — coarse category can't express).
+_EV_W = {
+    "category": 0.35,
+    "tags": 0.20,
+    "area": 0.20,
+    "family": 0.13,
+    "weekday": 0.06,
+    "budget": 0.06,
+}
 # Component weights inside a service taste-match (location dominates for trades).
 _SV_W = {"area": 0.50, "category": 0.30, "budget": 0.20}
 # Services: trust must dominate, so taste can move a provider's effective score by
@@ -161,6 +169,7 @@ def _event_attrs(event: Event) -> dict:
         "family_friendly": event.family_friendly,
         "weekday": _event_weekday(event),
         "price_min": float(event.price_min) if event.price_min is not None else None,
+        "tags": list(event.tags) if event.tags else None,
     }
 
 
@@ -172,20 +181,13 @@ def _provider_attrs(provider: ServiceProvider) -> dict:
     }
 
 
-async def capture_favorite(
-    session: AsyncSession,
-    user_id: UUID,
-    *,
-    item_type: str,
-    item_id: UUID,
-    removed: bool = False,
+async def _capture_item(
+    session: AsyncSession, user_id: UUID, *, kind: str, item_type: str, item_id: UUID
 ) -> None:
-    """Record a (un)favorite as a taste signal, then refresh the profile.
-
-    Resolves the event/provider to denormalise its facets into the signal. If the
-    item can't be resolved (already gone) we skip silently — a save we can't
-    explain isn't worth a dangling signal. Best-effort: never raises into the
-    favorite mutation it's attached to."""
+    """Resolve an event/provider, denormalise its facets into a ``kind`` signal, and
+    refresh the profile. If the item can't be resolved (already gone) we skip — a
+    signal we can't explain isn't worth a dangling row. Best-effort: never raises
+    into whatever mutation/handler it's attached to."""
     try:
         domain = "event" if item_type == "event" else "service"
         if domain == "event":
@@ -197,16 +199,40 @@ async def capture_favorite(
         if attrs is None:
             return
         await record_signal(
-            session,
-            user_id,
-            kind="unfavorite" if removed else "favorite",
-            domain=domain,
-            item_id=item_id,
-            attrs=attrs,
+            session, user_id, kind=kind, domain=domain, item_id=item_id, attrs=attrs
         )
         await recompute_profile(session, user_id)
-    except Exception as exc:  # taste capture must never break the core mutation
-        logger.warning("preference_capture_failed", kind="favorite", error=str(exc))
+    except Exception as exc:  # taste capture must never break the core action
+        logger.warning("preference_capture_failed", kind=kind, error=str(exc))
+
+
+async def capture_favorite(
+    session: AsyncSession,
+    user_id: UUID,
+    *,
+    item_type: str,
+    item_id: UUID,
+    removed: bool = False,
+) -> None:
+    """Record a (un)favorite as a taste signal, then refresh the profile."""
+    await _capture_item(
+        session,
+        user_id,
+        kind="unfavorite" if removed else "favorite",
+        item_type=item_type,
+        item_id=item_id,
+    )
+
+
+async def capture_interaction(
+    session: AsyncSession, user_id: UUID, *, kind: str, item_type: str, item_id: UUID
+) -> None:
+    """Record a lightweight interaction (a detail-screen ``view``, or a ``dismiss``)
+    as a weak taste signal. Anything outside that set is ignored, so the public
+    signal endpoint can't be used to inject arbitrary high-weight signals."""
+    if kind not in ("view", "dismiss"):
+        return
+    await _capture_item(session, user_id, kind=kind, item_type=item_type, item_id=item_id)
 
 
 async def capture_lead(
@@ -291,7 +317,7 @@ async def recompute_profile(session: AsyncSession, user_id: UUID) -> PreferenceP
             bump(event_cat, a.get("category"), w)
             bump(weekday, a.get("weekday"), w)
             for t in a.get("tags") or []:
-                bump(tags, t, w)
+                bump(tags, str(t).strip().lower(), w)  # match scoring's lowercase lookup
             ff = a.get("family_friendly")
             if ff is True:
                 family_pos += max(w, 0.0)
@@ -606,6 +632,21 @@ def _area_weight(area_weights: dict[str, float], area: str | None) -> float:
     return best
 
 
+def _best_tag(
+    tag_weights: dict[str, float], tags: list | None
+) -> tuple[float, str | None]:
+    """Strongest matching tag weight + the matching tag label (original case, for the
+    reason string). Lookup is lowercase to match how recompute stores tag keys."""
+    if not tag_weights or not tags:
+        return 0.0, None
+    best_w, best_label = 0.0, None
+    for t in tags:
+        v = tag_weights.get(str(t).strip().lower(), 0.0)
+        if v > best_w:
+            best_w, best_label = v, str(t)
+    return best_w, best_label
+
+
 def _budget_fit(typical: float | None, price_min: float | None) -> float:
     """+ when the item sits at/under the user's typical spend, − when it's well over;
     0 when either side is unknown (never penalise an unpriced item)."""
@@ -622,6 +663,7 @@ def _budget_fit(typical: float | None, price_min: float | None) -> float:
 def score_event(profile: PreferenceProfile, event: Event) -> float:
     """Taste match for one event in ~[-1, 1]."""
     cat = profile.event_category_weights.get(event.category, 0.0)
+    tag, _ = _best_tag(profile.tag_weights, event.tags)
     area = _area_weight(profile.area_weights, event.area)
     fam = 0.0
     if profile.family_bias is True:
@@ -634,6 +676,7 @@ def score_event(profile: PreferenceProfile, event: Event) -> float:
     )
     match = (
         _EV_W["category"] * cat
+        + _EV_W["tags"] * tag
         + _EV_W["area"] * area
         + _EV_W["family"] * fam
         + _EV_W["weekday"] * wday
@@ -649,6 +692,58 @@ def score_provider(profile: PreferenceProfile, provider: ServiceProvider) -> flo
     budget = _budget_fit(profile.typical_budget_aed, parse_aed(provider.price_from))
     match = _SV_W["area"] * area + _SV_W["category"] * cat + _SV_W["budget"] * budget
     return max(-1.0, min(1.0, match))
+
+
+def explain_event(profile: PreferenceProfile | None, event: Event) -> str | None:
+    """A short, user-facing reason this event ranked up ("In Dubai Marina",
+    "You like jazz") — the single strongest *positive* match component, or None when
+    nothing matched / personalisation isn't active. Powers the "Because you…" chip."""
+    if personalization_alpha(profile) <= 0:
+        return None
+    contribs: list[tuple[float, str]] = []
+    cat = profile.event_category_weights.get(event.category, 0.0)
+    if cat > 0:
+        contribs.append((_EV_W["category"] * cat, f"You like {event.category}"))
+    tag_w, tag_label = _best_tag(profile.tag_weights, event.tags)
+    if tag_w > 0 and tag_label:
+        contribs.append((_EV_W["tags"] * tag_w, f"You like {tag_label}"))
+    area_w = _area_weight(profile.area_weights, event.area)
+    if area_w > 0 and event.area:
+        contribs.append((_EV_W["area"] * area_w, f"In {event.area}"))
+    if profile.family_bias is True and event.family_friendly is True:
+        contribs.append((_EV_W["family"], "Family-friendly"))
+    budget = _budget_fit(
+        profile.typical_budget_aed,
+        float(event.price_min) if event.price_min is not None else None,
+    )
+    if budget > 0:
+        contribs.append((_EV_W["budget"] * budget, "In your budget"))
+    if not contribs:
+        return None
+    return max(contribs, key=lambda c: c[0])[1]
+
+
+def explain_provider(
+    profile: PreferenceProfile | None, provider: ServiceProvider
+) -> str | None:
+    """Short reason a provider ranked up, or None. Mirror of :func:`explain_event`."""
+    if personalization_alpha(profile) <= 0:
+        return None
+    contribs: list[tuple[float, str]] = []
+    area_w = _area_weight(profile.area_weights, provider.area)
+    if area_w > 0 and provider.area:
+        contribs.append((_SV_W["area"] * area_w, f"In {provider.area}"))
+    cat = profile.service_category_affinity.get(provider.category, 0.0)
+    if cat > 0:
+        contribs.append(
+            (_SV_W["category"] * cat, f"You've used {provider.category.replace('_', ' ')} before")
+        )
+    budget = _budget_fit(profile.typical_budget_aed, parse_aed(provider.price_from))
+    if budget > 0:
+        contribs.append((_SV_W["budget"] * budget, "Fits your budget"))
+    if not contribs:
+        return None
+    return max(contribs, key=lambda c: c[0])[1]
 
 
 def _event_time_score(event: Event, now: datetime) -> float:

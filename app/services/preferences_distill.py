@@ -92,7 +92,6 @@ async def _gather_context(
     lines: list[str] = []
     if profile.summary:
         lines.append(f"Structured summary (already known): {profile.summary}")
-    chips = preferences.derived_chips(profile)
     if profile.typical_budget_aed is not None:
         lines.append(f"Typical spend: ~AED {round(profile.typical_budget_aed)}")
     if profile.family_bias is True:

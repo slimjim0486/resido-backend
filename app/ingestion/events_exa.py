@@ -126,12 +126,26 @@ def _finalize(raw: dict, page: dict, category: str) -> dict | None:
         "price_from": price_from,
         "price_min": parse_aed(price_from),
         "family_friendly": family,
+        "tags": _clean_tags(raw.get("tags")),
         "starts_at": starts_at,
         "ends_at": ends_at,
         "source": _host(url) or "exa",
         "expires_at": expires_at,
         "is_published": True,
     }
+
+
+def _clean_tags(raw_tags) -> list[str] | None:
+    """Normalise Claude's taste tags: lowercase, de-#, dedupe, cap at 6. None when
+    there's nothing usable (so the column stays NULL rather than an empty array)."""
+    if not isinstance(raw_tags, list):
+        return None
+    out: list[str] = []
+    for t in raw_tags:
+        s = str(t).strip().lower().lstrip("#").strip()
+        if s and s not in out:
+            out.append(s)
+    return out[:6] or None
 
 
 def _dedup_key(row: dict) -> tuple[str, str]:

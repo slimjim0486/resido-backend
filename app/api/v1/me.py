@@ -23,6 +23,7 @@ from app.schemas.preferences import (
     PreferenceNoteUpdate,
     PreferenceOut,
     PreferenceSettingsUpdate,
+    SignalIn,
 )
 from app.schemas.services import ServiceProviderOut
 from app.schemas.workspace import (
@@ -285,3 +286,19 @@ async def reset_preferences(current_user: CurrentUser, session: Session):
     """Forget everything — drops all signals and blanks the profile to a clean slate."""
     profile = await preferences.reset_preferences(session, current_user.id)
     return APIResponse(data=_preference_out(profile), message="Memory cleared")
+
+
+@router.post(
+    "/signals", response_model=APIResponse[None], status_code=status.HTTP_202_ACCEPTED
+)
+async def record_signal(data: SignalIn, current_user: CurrentUser, session: Session):
+    """Report a lightweight interaction (the client fires this when a detail screen
+    opens). Feeds the taste graph; best-effort, so it never surfaces an error."""
+    await preferences.capture_interaction(
+        session,
+        current_user.id,
+        kind=data.kind,
+        item_type=data.item_type,
+        item_id=data.item_id,
+    )
+    return APIResponse(data=None, message="ok")

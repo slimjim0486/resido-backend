@@ -52,4 +52,9 @@ async def list_services(
         limit=limit,
         personalize=personalize,
     )
-    return APIResponse(data=[ServiceProviderOut.model_validate(p) for p in items])
+    out = []
+    for prov in items:
+        po = ServiceProviderOut.model_validate(prov)
+        po.reason = preferences_service.explain_provider(personalize, prov)
+        out.append(po)
+    return APIResponse(data=out)
