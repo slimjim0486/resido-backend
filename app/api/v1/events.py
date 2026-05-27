@@ -41,9 +41,10 @@ async def list_events(
     date_to: date | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=50),
 ):
-    """The public lifestyle feed. With no filters it's the plain 'what's on' list;
-    the same filters power the agent's `find_events` so both stay in lockstep.
-    A signed-in caller's feed is re-ranked by their taste (no-op when anonymous)."""
+    """The public lifestyle feed. With no filters it's the latest-scraped 'what's on'
+    list; the same filters power the agent's `find_events` so both stay in
+    lockstep. A signed-in caller's feed is re-ranked by their taste (no-op when
+    anonymous)."""
     personalize = (
         await preferences_service.get_preference_profile(session, user.id) if user else None
     )

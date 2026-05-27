@@ -64,14 +64,14 @@ async def search_events(
 ) -> list[Event]:
     """The one query behind both the public feed and the agent's `find_events`.
 
-    Always scoped to live rows (published & not expired), soonest-first with
-    undated ('ongoing') events last. Every filter is optional and additive:
+    Always scoped to live rows (published & not expired), newest scrape first
+    with event start time used only as a tie-breaker. Every filter is optional
+    and additive:
 
     When ``personalize`` is given (and the user has signals + hasn't paused taste),
     the SQL filters/order are unchanged but we over-fetch and re-rank the candidates
     by blending taste with imminence (see preferences.rank_events). Passing ``None``
-    — the anonymous feed — returns the plain soonest-first list, byte-for-byte as
-    before.
+    — the anonymous feed — returns the plain newest-scraped list.
 
     - ``query``    keyword ``ilike`` over title/description/venue (no embeddings).
     - ``category`` exact lifestyle key (dining/events/nightlife/shopping/family/outdoors).
@@ -123,11 +123,15 @@ async def search_events(
             stmt = stmt.where(func.date(local_start) <= date_to)
 
     # Over-fetch when personalising so the re-rank has a candidate pool to work
-    # with; the SQL ordering (soonest-first) still decides which rows that pool is.
+    # with; newest-scraped rows are the candidate pool, and date only breaks ties.
     personalize_active = preferences.personalization_alpha(personalize) > 0
     fetch_limit = min(limit * 3, 60) if personalize_active else limit
 
-    stmt = stmt.order_by(Event.starts_at.is_(None), Event.starts_at.asc()).limit(fetch_limit)
+    stmt = stmt.order_by(
+        Event.fetched_at.desc(),
+        Event.starts_at.is_(None),
+        Event.starts_at.asc(),
+    ).limit(fetch_limit)
     result = await session.execute(stmt)
     rows = list(result.scalars().all())
 
@@ -142,8 +146,8 @@ async def list_active_events(
     category: str | None = None,
     limit: int = 20,
 ) -> list[Event]:
-    """Published, unexpired events soonest-first — the bare feed. A thin wrapper
-    over :func:`search_events` so the feed and the agent never diverge."""
+    """Published, unexpired events newest-scraped first — the bare feed. A thin
+    wrapper over :func:`search_events` so the feed and the agent never diverge."""
     return await search_events(session, category=category, limit=limit)
 
 
