@@ -21,6 +21,7 @@ logger = get_logger(__name__)
 
 _DUBAI_TZ = ZoneInfo("Asia/Dubai")
 _LOCK_KEY = 860_202_605_270
+_STALE_RETRY_SECONDS = 300
 
 
 def _next_run_at(now: datetime | None = None) -> datetime:
@@ -75,8 +76,15 @@ async def refresh_events_feed_locked(*, reason: str) -> bool:
 
 
 async def _run_loop() -> None:
-    if await _feed_is_stale():
-        await refresh_events_feed_locked(reason="startup_stale")
+    while await _feed_is_stale():
+        ran = await refresh_events_feed_locked(reason="startup_stale")
+        if ran or not await _feed_is_stale():
+            break
+        logger.info(
+            "events_feed_refresh_retry_scheduled",
+            retry_in_seconds=_STALE_RETRY_SECONDS,
+        )
+        await asyncio.sleep(_STALE_RETRY_SECONDS)
     else:
         logger.info("events_feed_refresh_startup_fresh")
 
