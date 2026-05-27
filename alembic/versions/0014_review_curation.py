@@ -1,6 +1,6 @@
 """service_providers review curation
 
-Revision ID: 0014_service_provider_review_curation
+Revision ID: 0014_review_curation
 Revises: 0013_event_tags
 Create Date: 2026-05-27
 
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "0014_service_provider_review_curation"
+revision = "0014_review_curation"
 down_revision = "0013_event_tags"
 branch_labels = None
 depends_on = None
