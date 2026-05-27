@@ -212,7 +212,8 @@ TOOLS: list[dict] = [
             "and kid-friendly filters; returns tappable listings with booking links. Translate the "
             "user's ask into filters (e.g. 'family event under AED 500 on Friday' → family_friendly=true, "
             "max_price_aed=500, weekday='friday'). Present results with date, venue and price, link each "
-            "title to its url, then offer to set a reminder or add it to the checklist."
+            "title to its url, and compare options using the returned timing, area, price, family suitability, "
+            "tags/reason, and description. Then offer to set a reminder or add it to the checklist."
         ),
         "input_schema": {
             "type": "object",
@@ -244,7 +245,7 @@ TOOLS: list[dict] = [
                 },
                 "date_from": {"type": "string", "description": "Earliest event date, YYYY-MM-DD"},
                 "date_to": {"type": "string", "description": "Latest event date, YYYY-MM-DD"},
-                "limit": {"type": "integer", "description": "Max results, 1-12. Default 6."},
+                "limit": {"type": "integer", "description": "Max results, 1-20. Default 6."},
             },
         },
     },
@@ -584,7 +585,7 @@ async def execute_tool(
         )
 
     if name == "find_events":
-        limit = max(1, min(int(tool_input.get("limit") or 6), 12))
+        limit = max(1, min(int(tool_input.get("limit") or 6), 20))
         personalize = await preferences_service.get_preference_profile(session, user_id)
         events = await events_service.search_events(
             session,
@@ -600,20 +601,27 @@ async def execute_tool(
             limit=limit,
             personalize=personalize,
         )
+        explain_event = getattr(preferences_service, "explain_event", None)
         return (
             {
                 "events": [
                     {
                         "title": e.title,
-                        "description": e.description[:200] if e.description else None,
+                        "description": e.description[:500] if e.description else None,
                         "category": e.category,
                         "venue": e.venue,
                         "area": e.area,
                         "starts_at": e.starts_at.isoformat() if e.starts_at else None,
+                        "ends_at": e.ends_at.isoformat() if e.ends_at else None,
                         "price_from": e.price_from,
                         "price_min_aed": float(e.price_min) if e.price_min is not None else None,
                         "is_free": (float(e.price_min) == 0) if e.price_min is not None else None,
+                        "price_certainty": "listed" if e.price_from else "not_listed",
                         "family_friendly": e.family_friendly,
+                        "tags": getattr(e, "tags", None) or [],
+                        "why_ranked": explain_event(personalize, e) if explain_event else None,
+                        "source": e.source,
+                        "expires_at": e.expires_at.isoformat() if e.expires_at else None,
                         "url": e.url,
                     }
                     for e in events
@@ -621,10 +629,12 @@ async def execute_tool(
                 "count": len(events),
                 "note": (
                     "Live listings from Resido's curated feed (recommendations, not legal facts — no "
-                    "verified-source citation needed). Present each with its date, venue and price, and "
-                    "link the title to its url. Say when a price isn't listed (price_from null). For a "
-                    "dated event, offer to set_reminder or add_checklist_item. If nothing fits, loosen "
-                    "one filter rather than inventing events."
+                    "verified-source citation needed). For analysis or comparisons, weigh timing, area, "
+                    "price certainty, family suitability, category/tags, venue, description, and why_ranked. "
+                    "Lead with the best fit and the tradeoff, not a raw list. Link each title to its url. "
+                    "Say when a price isn't listed (price_from null). For a dated event, offer to "
+                    "set_reminder or add_checklist_item. If nothing fits, loosen one filter rather than "
+                    "inventing events."
                 ),
             },
             [],

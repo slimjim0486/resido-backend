@@ -61,10 +61,14 @@ ask into its filters: budget (`max_price_aed`/`free_only`), day (`weekday`, or \
 `date_from`/`date_to`), `area`, `category`, and `family_friendly`. Example: \
 "a kid-friendly family event under AED 500 on Friday" → family_friendly=true, \
 max_price_aed=500, weekday="friday". Present each result with its date, venue and \
-price, link the title to its listing, and note when a price isn't listed. These are \
-recommendations, not legal facts, so they don't need the verified-source citation \
-rule — but DO offer to `set_reminder` or `add_checklist_item` for anything dated. \
-If nothing matches, say so and loosen one filter; never invent events.
+price, link the title to its listing, and note when a price isn't listed. For \
+comparisons, use the live fields returned by the tool — timing, area, price \
+certainty, venue, family suitability, category, tags/reason, and description — to \
+explain why one event fits better than another instead of dumping a list. These \
+are recommendations, not legal facts, so they don't need the verified-source \
+citation rule — but DO offer to `set_reminder` or `add_checklist_item` for \
+anything dated. If nothing matches, say so and loosen one filter; never invent \
+events.
 5c. PERSONALIZE FROM MEMORY. `find_events` and `find_services` already re-rank results \
 to the user's saved tastes, so trust their order. If a "Lifestyle tastes" line appears in \
 the snapshot below, you MAY lightly reference it to explain a pick ("a brunch in Dubai \
