@@ -38,8 +38,10 @@ async def list_services(
     limit: int = Query(default=20, ge=1, le=50),
 ):
     """Ranked providers. The optional filters mirror the agent's `find_services`
-    so the Services screen and the co-pilot return the same set. A signed-in
-    caller's results get a bounded taste re-rank (no-op when anonymous)."""
+    so the Services screen and the co-pilot return the same set. Area is a boost,
+    not a hard filter: most home-service providers travel, and Google Maps returns
+    overlapping service-area businesses across nearby Dubai neighborhoods. A
+    signed-in caller's results get a bounded taste re-rank (no-op when anonymous)."""
     personalize = (
         await preferences_service.get_preference_profile(session, user.id) if user else None
     )
@@ -48,6 +50,7 @@ async def list_services(
         category=category,
         subcategory=subcategory,
         area=area,
+        area_soft=bool(area and area.strip()),
         min_rating=min_rating,
         query=q,
         max_price=max_price,
