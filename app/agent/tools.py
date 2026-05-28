@@ -3,7 +3,9 @@
 Capabilities map to the requirement: READ (kb_search, advanced_search, get_profile,
 list_checklist, list_deadlines, list_renewals, find_events, find_services), WRITE
 (add_checklist_item, set_reminder, track_renewal, set_visa_anchor, create_lead,
-remember_preference), EDIT (update_profile, update_checklist_item, update_renewal).
+remember_preference), EDIT (update_profile, update_checklist_item, update_renewal),
+SUMMARIZE (the model turns read-tool results, review_curation, citations, and the
+live workspace snapshot into concise answers and comparisons).
 Mutations go through a shared service layer — `services.workspace` for the workspace
 domains, `services.preferences` for taste memory — and the read tools call the same
 service functions the REST API uses, so the agent and API never diverge.
