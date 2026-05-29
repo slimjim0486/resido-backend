@@ -82,7 +82,9 @@ served directly to Home hero · cached to each event's end date (self-expiring)
 ```
 
 - Structured rows, not chunks → cheap to store, trivial to render, expire themselves.
-- One scheduled Apify run/day covers it; on-demand reads hit the cached table, never the scraper.
+- One scheduled Apify/Exa run/day covers it; on-demand reads hit the cached table, never the scraper.
+- Existing event URLs reuse their stored image, so recurring runs do not redo per-event Exa image search
+  or R2 mirroring just to refresh the same listing.
 - Optional cheaper variant: Exa date-filtered search (`startPublishedDate`) for "what's on this week,"
   cached in Redis — use if a given source has no good Apify actor. *(Task #6.)*
 - **Query facets (migration `0011`):** each row carries `price_min` (lowest AED, parsed from the
@@ -260,7 +262,8 @@ verified Tier A KB — demand-driven growth. No new agent tool surface; the fall
 `0003_source_content_hash`); `pipeline.ingest_url` now skips chunk-replace + re-embed when a
 refetched page is byte-identical, touching only `last_fetched_at`. `app/ingestion/registry.py`
 holds the curated allowlist (14 sources, per-category TTLs); `app/ingestion/refresh.py` refreshes
-only TTL-elapsed sources, oldest-first, capped per run; `scripts/refresh_kb.py` registers + refreshes
+only TTL-elapsed sources, oldest-first, capped per run, with failed-source backoff so a broken URL does
+not monopolize every cron tick; `scripts/refresh_kb.py` registers + refreshes
 (`--limit`, `--register-only`). **Wired as a Railway cron** (`railway.refresh-kb.json`, every 6h);
 the Tier B feed runs alongside it (`railway.seed-events.json`, daily). Setup steps + env vars:
 [`backend/DEPLOY_CRON.md`](DEPLOY_CRON.md).
@@ -268,6 +271,11 @@ the Tier B feed runs alongside it (`railway.seed-events.json`, daily). Setup ste
 **Tier B shipped (2026-05-25):** `events` table + migration `0002_events`; public `GET /api/v1/events`;
 `scripts/seed_events.py`; Flutter Home strip + per-category Explore listings + Event detail page, all
 wired to the feed with a graceful sample fallback.
+
+**Refresh efficiency pass (2026-05-29):** event runs now reuse existing event images before attempting
+per-event Exa image search/R2 mirroring; the web-service feed fallback checks staleness before a scheduled
+run so it does not duplicate a healthy Railway cron. Event dedupe remains daily, while provider dedupe is
+weekly after services refresh because provider rows only change on service ingestion.
 
 **Events source precedence** (`seed_events`): **Apify** (`app/ingestion/events.py`, if `APIFY_EVENTS_ACTOR`
 set) → **Exa** (`app/ingestion/events_exa.py`, default) → curated samples. One Exa query per lifestyle key,

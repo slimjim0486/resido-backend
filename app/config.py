@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     # Apify actor that scrapes the lifestyle events feed (Tier B), e.g.
     # "<username>/dubai-events-scraper". Unset → seed uses curated samples.
     APIFY_EVENTS_ACTOR: str = ""
+    # Exa search results per lifestyle category when no Apify events actor is set.
+    # Structured extraction may read up to EVENTS_EXTRACT_MAX_PAGES of these.
+    EVENTS_EXA_PER_CATEGORY: int = 4
     # Exa→Claude structured event extraction (Tier B+, see EVENTS_EXTRACTION.md).
     EVENTS_EXTRACT: bool = True
     EVENTS_EXTRACT_MAX_PAGES: int = 3  # pages/category sent to Claude
@@ -122,6 +125,9 @@ class Settings(BaseSettings):
     # cron service is missing. Startup run catches missed jobs after deploy.
     DEDUPLICATOR_AUTORUN: bool = True
     DEDUPLICATOR_RUN_HOUR_DUBAI: int = 8
+    # Providers only change after service refreshes, so the fallback dedupes
+    # events daily and providers on Monday (Python weekday: Monday=0).
+    DEDUPLICATOR_PROVIDER_RUN_WEEKDAY_DUBAI: int = 0
 
     # ─── Object storage: Cloudflare R2 (scraped-image mirroring) ───
     # Scraped image URLs (Google Maps photos, ticket-site images) are short-lived

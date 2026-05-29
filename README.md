@@ -38,5 +38,6 @@ as the healthcheck. Set the service's env vars (see `.env.example`) and point it
 
 **Scheduled ingestion** runs as separate cron services in the same project:
 `railway.refresh-kb.json` (Tier A KB refresh, every 6h) and `railway.seed-events.json`
-(Tier B events feed, daily), plus capped services refresh, dedupe, and preference-distill jobs.
+(Tier B events feed, daily), plus capped services refresh, split event/provider dedupe, and
+preference-distill jobs.
 Setup + per-job env vars: see `DEPLOY_CRON.md`.

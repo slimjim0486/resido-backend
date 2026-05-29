@@ -104,13 +104,19 @@ def _sample_events() -> list[dict]:
     return raw
 
 
-async def main() -> None:
+async def main(
+    *, per_category: int | None = None, categories: list[str] | None = None
+) -> None:
     async with async_session_maker() as session:
         if settings.APIFY_TOKEN and settings.APIFY_EVENTS_ACTOR:
             n = await ingest_apify_events(session)
             print(f"Apify ({settings.APIFY_EVENTS_ACTOR}): inserted {n} new events.")
         elif settings.EXA_API_KEY:
-            n = await ingest_exa_events(session)
+            n = await ingest_exa_events(
+                session,
+                per_category=per_category or settings.EVENTS_EXA_PER_CATEGORY,
+                categories=categories,
+            )
             print(f"Exa: inserted {n} new events across the lifestyle categories.")
         else:
             n = await events_service.upsert_events(session, _sample_events())
@@ -128,4 +134,21 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Seed / refresh the lifestyle events feed.")
+    parser.add_argument(
+        "--per-category",
+        type=int,
+        default=settings.EVENTS_EXA_PER_CATEGORY,
+        help="Exa results per lifestyle category when using the Exa path",
+    )
+    parser.add_argument(
+        "--categories",
+        type=str,
+        default="",
+        help="comma-separated lifestyle categories to refresh (default: all)",
+    )
+    args = parser.parse_args()
+    cats = [c.strip() for c in args.categories.split(",") if c.strip()] or None
+    asyncio.run(main(per_category=args.per_category, categories=cats))

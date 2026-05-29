@@ -179,6 +179,25 @@ async def upsert_events(session: AsyncSession, items: list[dict]) -> int:
     return inserted
 
 
+async def apply_existing_event_images(session: AsyncSession, items: list[dict]) -> set[str]:
+    """Reuse stored images for already-known event URLs.
+
+    Event enrichment may do per-event Exa image searches and R2 mirroring. If the
+    URL already has an image, keep it and skip that recurring work.
+    """
+    urls = [item.get("url") for item in items if item.get("url")]
+    if not urls:
+        return set()
+    result = await session.execute(
+        select(Event.url, Event.image_url).where(Event.url.in_(urls), Event.image_url.is_not(None))
+    )
+    existing = {url: image for url, image in result.all() if image}
+    for item in items:
+        if image := existing.get(item.get("url")):
+            item["image_url"] = image
+    return set(existing)
+
+
 async def delete_expired_events(session: AsyncSession, *, retention_days: int = 30) -> int:
     """Physically remove events that have been hidden past the retention window.
 

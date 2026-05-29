@@ -333,24 +333,28 @@ def _event_candidates(events: list[Event]):
 
 def _provider_candidates(providers: list[ServiceProvider]):
     seen: set[tuple[str, str]] = set()
-    for i, left in enumerate(providers):
-        for right in providers[i + 1 :]:
-            if left.id == right.id or left.category != right.category:
-                continue
-            name_hint = _token_set_ratio(left.name, right.name, business=True)
-            contact_hint = max(
-                _phone_score(left.phone, right.phone),
-                _url_score(left.website, right.website),
-            )
-            if name_hint < 0.45 and contact_hint < 0.8:
-                continue
-            distance = _geo_km(left, right)
-            if distance is not None and distance > 15 and contact_hint < 0.9:
-                continue
-            key = _pair_key(str(left.id), str(right.id))
-            if key not in seen:
-                seen.add(key)
-                yield left, right
+    by_category: dict[str, list[ServiceProvider]] = {}
+    for provider in providers:
+        by_category.setdefault(provider.category, []).append(provider)
+    for category_providers in by_category.values():
+        for i, left in enumerate(category_providers):
+            for right in category_providers[i + 1 :]:
+                if left.id == right.id:
+                    continue
+                name_hint = _token_set_ratio(left.name, right.name, business=True)
+                contact_hint = max(
+                    _phone_score(left.phone, right.phone),
+                    _url_score(left.website, right.website),
+                )
+                if name_hint < 0.45 and contact_hint < 0.8:
+                    continue
+                distance = _geo_km(left, right)
+                if distance is not None and distance > 15 and contact_hint < 0.9:
+                    continue
+                key = _pair_key(str(left.id), str(right.id))
+                if key not in seen:
+                    seen.add(key)
+                    yield left, right
 
 
 async def deduplicate_events(

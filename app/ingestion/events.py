@@ -153,9 +153,20 @@ async def ingest_apify_events(
         n for n in (normalize(i, source=src, default_category=default_category) for i in raw) if n
     ]
     # Re-host scraped images in R2 before persisting, so stored URLs don't expire.
-    await r2_storage.mirror_field(normalized, src_field="image_url", key_fn=_image_key)
+    # Existing URLs keep their stored image to avoid unnecessary re-downloads.
+    reused_images = await events_service.apply_existing_event_images(session, normalized)
+    await r2_storage.mirror_field(
+        [r for r in normalized if r.get("url") not in reused_images],
+        src_field="image_url",
+        key_fn=_image_key,
+    )
     inserted = await events_service.upsert_events(session, normalized)
     logger.info(
-        "events_ingested", source=src, fetched=len(raw), kept=len(normalized), inserted=inserted
+        "events_ingested",
+        source=src,
+        fetched=len(raw),
+        kept=len(normalized),
+        reused_images=len(reused_images),
+        inserted=inserted,
     )
     return inserted

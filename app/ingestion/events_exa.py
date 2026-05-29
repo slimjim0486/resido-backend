@@ -204,13 +204,19 @@ async def ingest_exa_events(
         else:
             rows = [e for e in (_to_event(r, key) for r in results) if e]
 
-        # Give each event a distinct, renderable image: a per-event Exa search
-        # (title+venue), falling back to the article og:image, mirrored to R2.
-        await event_image.resolve_images(rows)
+        # Give new events a distinct, renderable image. Existing event URLs keep
+        # their stored image, avoiding daily Exa image searches and R2 re-mirrors.
+        reused_images = await events_service.apply_existing_event_images(session, rows)
+        await event_image.resolve_images([r for r in rows if r.get("url") not in reused_images])
         n = await events_service.upsert_events(session, rows)
         inserted += n
         logger.info(
-            "exa_events_category", category=key, fetched=len(results), kept=len(rows), inserted=n,
+            "exa_events_category",
+            category=key,
+            fetched=len(results),
+            kept=len(rows),
+            reused_images=len(reused_images),
+            inserted=n,
             mode="extract" if use_extract else "page",
         )
     return inserted

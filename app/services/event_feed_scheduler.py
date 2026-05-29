@@ -93,7 +93,10 @@ async def _run_loop() -> None:
         delay = max(1.0, (next_run - datetime.now(_DUBAI_TZ)).total_seconds())
         logger.info("events_feed_refresh_scheduled", next_run_at=next_run.isoformat())
         await asyncio.sleep(delay)
-        await refresh_events_feed_locked(reason="daily_schedule")
+        if await _feed_is_stale():
+            await refresh_events_feed_locked(reason="daily_schedule")
+        else:
+            logger.info("events_feed_refresh_daily_skip_fresh")
 
 
 def start_event_feed_scheduler() -> asyncio.Task | None:

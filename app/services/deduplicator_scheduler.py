@@ -37,7 +37,7 @@ def _next_run_at(now: datetime | None = None) -> datetime:
     return target
 
 
-async def run_deduplicator_locked(*, reason: str) -> bool:
+async def run_deduplicator_locked(*, reason: str, scope: str = "all") -> bool:
     """Run dedupe once if no other dedupe currently holds the lock."""
     async with async_session_maker() as session:
         result = await session.execute(
@@ -51,17 +51,19 @@ async def run_deduplicator_locked(*, reason: str) -> bool:
             logger.info(
                 "deduplicator_started",
                 reason=reason,
+                scope=scope,
                 threshold=settings.DEDUPLICATOR_CONFIDENCE_THRESHOLD,
             )
             summary = await run_deduplicator(
                 session,
                 threshold=settings.DEDUPLICATOR_CONFIDENCE_THRESHOLD,
                 dry_run=False,
-                scope="all",
+                scope=scope,
             )
             logger.info(
                 "deduplicator_finished_fallback",
                 reason=reason,
+                scope=scope,
                 events_checked=summary.events_checked,
                 event_duplicates=summary.event_duplicates,
                 providers_checked=summary.providers_checked,
@@ -76,14 +78,16 @@ async def run_deduplicator_locked(*, reason: str) -> bool:
 
 
 async def _run_loop() -> None:
-    await run_deduplicator_locked(reason="startup")
+    await run_deduplicator_locked(reason="startup", scope="events")
 
     while True:
         next_run = _next_run_at()
         delay = max(1.0, (next_run - datetime.now(_DUBAI_TZ)).total_seconds())
         logger.info("deduplicator_scheduled", next_run_at=next_run.isoformat())
         await asyncio.sleep(delay)
-        await run_deduplicator_locked(reason="daily_schedule")
+        await run_deduplicator_locked(reason="daily_schedule", scope="events")
+        if datetime.now(_DUBAI_TZ).weekday() == settings.DEDUPLICATOR_PROVIDER_RUN_WEEKDAY_DUBAI:
+            await run_deduplicator_locked(reason="weekly_provider_schedule", scope="providers")
 
 
 def start_deduplicator_scheduler() -> asyncio.Task | None:

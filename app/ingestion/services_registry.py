@@ -1,9 +1,8 @@
 """The Services vertical grid: (service category × Dubai area).
 
-A bounded, finite registry — ~10 categories × ~10 areas — scraped on a slow
-monthly TTL (see backend/INGESTION.md, "Services (Tier A-style)"). Bounding the
-grid is the cost lever: ~100 cells × ~15 providers, scraped monthly, cached as
-durable rows. Refine the lists here as early runs report thin cells.
+A bounded, finite registry with category-specific TTLs and capped recurring
+refresh depth (see backend/INGESTION.md, "Services (Tier A-style)"). Bounding
+the grid is the cost lever; expanding this list is a product decision.
 """
 
 from dataclasses import dataclass
