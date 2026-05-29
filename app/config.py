@@ -89,11 +89,13 @@ class Settings(BaseSettings):
     # (Tier A-style durable provider rows; see backend/INGESTION.md). Reuses
     # APIFY_TOKEN — no new secret. Unset/blank → seed uses curated samples.
     APIFY_MAPS_ACTOR: str = "compass/crawler-google-places"
-    # Providers scraped per (category × area) grid cell each run.
+    # Providers scraped per (category × area) grid cell each run. Individual
+    # categories can override this for recurring refreshes in services_registry.py.
     SERVICES_PER_CELL: int = 15
-    # Re-scrape a grid cell only when its freshest row is older than this (days).
-    # Monthly cadence: durable rows, not a churny feed.
-    SERVICES_TTL_DAYS: int = 30
+    # Fallback TTL for categories that don't define their own refresh cadence.
+    # Services are durable rows, not a churny feed; the refresh cron runs
+    # frequently but only touches a small oldest-due batch.
+    SERVICES_TTL_DAYS: int = 60
     # Open each place's detail page during a scrape to capture opening hours.
     # The biggest cost/time lever — turn off (SERVICES_SCRAPE_DETAILS=false) for
     # fast, cheap re-seeds; you lose `hours` but keep everything else.

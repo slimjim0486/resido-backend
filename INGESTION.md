@@ -124,13 +124,16 @@ served via GET /api/v1/services?category=&subcategory=&area=
   scrape" lane. The off-the-shelf `compass/crawler-google-places` actor is used via the existing
   `apify_client.run_actor` (reuses `APIFY_TOKEN`; actor configurable via `APIFY_MAPS_ACTOR`).
 - **Bounded grid = the cost lever.** The category/subcategory × area registry
-  (`app/ingestion/services_registry.py`) is finite. `SERVICES_PER_CELL` (~15) caps places/cell; shelters
-  use a citywide cell rather than every area. The result is still a few thousand places **once a month**
-  at low Maps-actor cost, cached as durable rows. Not daily; that's the whole point.
+  (`app/ingestion/services_registry.py`) is finite. `SERVICES_PER_CELL` caps full seed runs; each category
+  can set a lower `refresh_per_cell` for recurring refreshes. Shelters use a citywide cell rather than every
+  area. The result is a durable provider directory refreshed in small batches, not a churny feed.
 - **TTL refresh, Tier-A style.** `scripts/refresh_services.py` re-scrapes only cells whose freshest row has
-  aged past `SERVICES_TTL_DAYS` (30) — cell freshness is read straight off `max(fetched_at)` per
-  `(category, subcategory, area)` (`providers.cell_freshness`), so there's no separate bookkeeping table. Wired to a
-  **monthly** Railway cron (`railway.refresh-services.json`, `0 3 1 * *`). Seed/refresh both reuse `APIFY_TOKEN`.
+  aged past its registry TTL (`refresh_ttl_days`, falling back to `SERVICES_TTL_DAYS`) — cell freshness is
+  tracked in `service_provider_cells` and backfilled from provider rows on older databases. This matters
+  because a Maps scrape can successfully check a cell while returning providers that dedupe into nearby
+  canonical areas. Wired to a **weekly oldest-due batch** Railway cron
+  (`railway.refresh-services.json`, `0 3 * * 1`) with a default `--limit 30`, so the 211-cell expanded grid
+  is never refreshed all at once. Seed/refresh both reuse `APIFY_TOKEN`.
   The detail-page scrape (opening hours/review samples) is the costliest toggle and is gated by
   `SERVICES_SCRAPE_DETAILS`; `SERVICES_MAX_REVIEWS` controls the small Google-review sample used for
   non-verbatim review curation. Keep it low, or set it to `0` for cheap re-seeds.
@@ -167,9 +170,13 @@ served via GET /api/v1/services?category=&subcategory=&area=
 **Shipped 2026-05-25:** `service_providers` table + migration `0004_service_providers`; `app/services/providers.py`
 (upsert/list + Bayesian score + `cell_freshness`); `app/ingestion/providers_maps.py` + `services_registry.py`;
 public `GET /api/v1/services`; `find_services` agent tool; `scripts/seed_services.py` + `scripts/refresh_services.py`
-+ monthly cron. Verified read-only: an `ac_repair × Dubai Marina` dry run returned 15 providers with real
++ weekly capped refresh cron. Verified read-only: an `ac_repair × Dubai Marina` dry run returned 15 providers with real
 place_ids, hours, derived WhatsApp numbers, and correct Bayesian ranking. (`apify_client.run_actor` also fixed to
 swap `username/actor` → `username~actor` for the REST path.)
+
+**Refresh hardening 2026-05-29:** migration `0016_service_cells` adds `service_provider_cells`, a lightweight
+refresh ledger keyed by `(category, subcategory, area)`, so capped crons rotate through cells based on successful
+cell checks rather than only provider-row updates.
 
 ---
 
@@ -189,7 +196,7 @@ normalize → mirror_field (download → R2 PutObject) → upsert      ── wr
   (Exa yields no images; dry runs never write).
 - **Keys are content-addressed on the row's identity** — `events/<sha1(url)>`,
   `providers/<sha1(place_id)>` — so a re-scrape overwrites the same object (bounded object count;
-  provider photos refresh monthly in place).
+  provider photos refresh in place when a cell is refreshed).
 - **No SDK.** `app/ingestion/r2_storage.py` SigV4-signs a single S3 `PutObject` over httpx —
   same raw-REST approach as Apify/Exa, and sidesteps boto3's default-checksum quirks with
   S3-compatible stores. Downloads use a browser UA (to clear hotlink protection), a 10 MB cap,

@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.pricing import parse_aed
 from app.models.preference import PreferenceProfile
-from app.models.service import ServiceProvider
+from app.models.service import ServiceProvider, ServiceProviderCell
 from app.services import preferences
 
 # Bayesian (IMDB-style) prior: until a provider has ~m reviews, its score is
@@ -211,16 +211,74 @@ async def retire_stale(
     return result.rowcount or 0
 
 
-async def cell_freshness(session: AsyncSession) -> dict[tuple[str, str, str], datetime]:
-    """Most-recent ``fetched_at`` per (category, area) cell.
+async def record_cell_refresh(
+    session: AsyncSession,
+    *,
+    category: str,
+    subcategory: str,
+    area: str,
+    fetched_count: int,
+    kept_count: int,
+    inserted_count: int,
+    source: str,
+) -> None:
+    """Record that a registry scrape cell was checked.
 
-    The Tier A-style TTL refresh uses this to re-scrape only cells whose data has
-    aged past the TTL — no separate bookkeeping table needed."""
-    stmt = select(
+    This is intentionally separate from provider rows: Google Maps can return
+    existing/nearby providers for a query, and upsert dedupe can mean no row in
+    the exact cell changes. The refresh cron still needs to know the cell was
+    successfully checked.
+    """
+    key = {
+        "category": category,
+        "subcategory": subcategory or "general",
+        "area": area or "",
+    }
+    result = await session.execute(
+        select(ServiceProviderCell)
+        .where(ServiceProviderCell.category == key["category"])
+        .where(ServiceProviderCell.subcategory == key["subcategory"])
+        .where(ServiceProviderCell.area == key["area"])
+    )
+    cell = result.scalar_one_or_none()
+    if cell is None:
+        cell = ServiceProviderCell(**key)
+        session.add(cell)
+    cell.fetched_at = datetime.now(timezone.utc)
+    cell.fetched_count = fetched_count
+    cell.kept_count = kept_count
+    cell.inserted_count = inserted_count
+    cell.source = source
+    await session.commit()
+
+
+async def cell_freshness(session: AsyncSession) -> dict[tuple[str, str, str], datetime]:
+    """Most-recent successful check per (category, subcategory, area) cell.
+
+    The explicit cell ledger is authoritative when present. Provider rows are
+    still used as a backfill path for databases upgraded from the older schema.
+    """
+    ledger_stmt = select(
+        ServiceProviderCell.category,
+        ServiceProviderCell.subcategory,
+        ServiceProviderCell.area,
+        ServiceProviderCell.fetched_at,
+    )
+    ledger_result = await session.execute(ledger_stmt)
+    out = {
+        (cat, subcat or "general", area or ""): ts
+        for cat, subcat, area, ts in ledger_result.all()
+    }
+
+    provider_stmt = select(
         ServiceProvider.category,
         ServiceProvider.subcategory,
         ServiceProvider.area,
         func.max(ServiceProvider.fetched_at),
     ).group_by(ServiceProvider.category, ServiceProvider.subcategory, ServiceProvider.area)
-    result = await session.execute(stmt)
-    return {(cat, subcat or "general", area or ""): ts for cat, subcat, area, ts in result.all()}
+    provider_result = await session.execute(provider_stmt)
+    for cat, subcat, area, ts in provider_result.all():
+        key = (cat, subcat or "general", area or "")
+        if key not in out:
+            out[key] = ts
+    return out

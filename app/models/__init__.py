@@ -9,7 +9,7 @@ from app.models.kb_chunk import KBChunk
 from app.models.lead import Lead
 from app.models.preference import PreferenceProfile, PreferenceSignal
 from app.models.profile import Profile
-from app.models.service import ServiceProvider
+from app.models.service import ServiceProvider, ServiceProviderCell
 from app.models.source import Source
 from app.models.user import AuthIdentity, AuthSession, EmailOTPChallenge, User
 
@@ -25,6 +25,7 @@ __all__ = [
     "Event",
     "Favorite",
     "ServiceProvider",
+    "ServiceProviderCell",
     "Source",
     "KBChunk",
     "Lead",

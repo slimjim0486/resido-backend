@@ -3,7 +3,7 @@
   "build": { "builder": "NIXPACKS" },
   "deploy": {
     "startCommand": "python -m scripts.refresh_services",
-    "cronSchedule": "0 3 1 * *",
+    "cronSchedule": "0 3 * * 1",
     "restartPolicyType": "NEVER",
     "numReplicas": 1
   }

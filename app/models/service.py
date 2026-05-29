@@ -5,8 +5,8 @@ AC repair, handyman, movers, …) discovered via the Apify Google Maps actor,
 ranked by a Bayesian trust score, and surfaced with a lead-gen CTA.
 
 Modeled as **Tier A-style durable data**, not a churny feed: a bounded
-(category × area) grid is scraped on a slow monthly TTL and the rows persist —
-the opposite economics of the events feed (Tier B), which self-expires.
+(category × area) grid is refreshed in capped oldest-due batches and the rows
+persist — the opposite economics of the events feed (Tier B), which self-expires.
 """
 
 from datetime import datetime
@@ -94,3 +94,29 @@ class ServiceProvider(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class ServiceProviderCell(TimestampMixin, Base):
+    """Refresh ledger for one registry cell.
+
+    Provider rows are deduped by Google place_id and may be reused across nearby
+    cells. This table tracks whether the *cell itself* was checked so the cron
+    does not re-scrape cells forever just because no provider row lands exactly
+    on that canonical area.
+    """
+
+    __tablename__ = "service_provider_cells"
+    __table_args__ = (
+        Index("ix_service_provider_cells_fetched_at", "fetched_at"),
+    )
+
+    category: Mapped[str] = mapped_column(String(80), primary_key=True)
+    subcategory: Mapped[str] = mapped_column(String(80), primary_key=True, default="general")
+    area: Mapped[str] = mapped_column(String(120), primary_key=True)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    fetched_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    kept_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    inserted_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    source: Mapped[str] = mapped_column(String(120), default="google_maps", nullable=False)

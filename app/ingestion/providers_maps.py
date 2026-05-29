@@ -407,6 +407,16 @@ async def ingest_cell(
         grace_days=settings.SERVICES_STALE_GRACE_DAYS,
         subcategory=category.subcategory,
     )
+    await providers_service.record_cell_refresh(
+        session,
+        category=category.row_category,
+        subcategory=category.subcategory,
+        area=area,
+        fetched_count=len(raw),
+        kept_count=len(rows),
+        inserted_count=inserted,
+        source=source,
+    )
     logger.info(
         "providers_cell",
         category=category.row_category, subcategory=category.subcategory, area=area, source=source,
@@ -424,10 +434,10 @@ async def ingest_grid(
     """Scrape a set of grid cells (default: the whole registry), resilient per-cell.
     Returns the total newly-inserted providers."""
     cells = cells if cells is not None else grid()
-    per = per_cell or settings.SERVICES_PER_CELL
     inserted = 0
     for category, area in cells:
         try:
+            per = per_cell or category.refresh_per_cell or settings.SERVICES_PER_CELL
             inserted += await ingest_cell(session, category, area, per_cell=per)
         except Exception as exc:  # one bad cell must not sink the run
             await session.rollback()
@@ -454,13 +464,25 @@ async def dry_run_cell(category: Category, area: str, *, per_cell: int) -> list[
 
 
 def due_cells(
-    freshness: dict[tuple[str, str, str], datetime], *, ttl_days: int
+    freshness: dict[tuple[str, str, str], datetime],
+    *,
+    ttl_days: int,
+    now: datetime | None = None,
 ) -> list[tuple[Category, str]]:
-    """Grid cells never scraped, or whose freshest row has aged past the TTL."""
-    threshold = datetime.now(timezone.utc) - timedelta(days=ttl_days)
-    due: list[tuple[Category, str]] = []
+    """Grid cells never scraped, or whose freshest row has aged past the TTL.
+
+    Each registry category can override the default TTL. Returned cells are
+    oldest-first so a capped cron rotates fairly instead of always refreshing the
+    first registry categories.
+    """
+    now = now or datetime.now(timezone.utc)
+    due: list[tuple[datetime, str, str, tuple[Category, str]]] = []
+    never = datetime.min.replace(tzinfo=timezone.utc)
     for category, area in grid():
         last = freshness.get((category.row_category, category.subcategory, area))
+        category_ttl = category.refresh_ttl_days or ttl_days
+        threshold = now - timedelta(days=category_ttl)
         if last is None or last < threshold:
-            due.append((category, area))
-    return due
+            due.append((last or never, category.key, area, (category, area)))
+    due.sort(key=lambda item: (item[0], item[1], item[2]))
+    return [cell for *_, cell in due]

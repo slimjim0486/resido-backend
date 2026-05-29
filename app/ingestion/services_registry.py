@@ -17,31 +17,52 @@ class Category:
     category: str | None = None  # stored/API parent category; defaults to key
     subcategory: str = "general"
     areas: tuple[str, ...] | None = None
+    # Refresh policy. Seeding can be fuller; recurring refreshes should be cheaper
+    # and staggered by volatility.
+    refresh_ttl_days: int | None = None
+    refresh_per_cell: int | None = None
 
     @property
     def row_category(self) -> str:
         return self.category or self.key
 
 
-# ~10 high-intent home/living service categories to start.
+_HOME_FAST_TTL = 45
+_HOME_SLOW_TTL = 60
+_PETS_TTL = 75
+_MEDICAL_ACCESS_TTL = 45
+_MEDICAL_STANDARD_TTL = 75
+
+
+# High-intent home/living service categories.
 CATEGORIES: list[Category] = [
-    Category("cleaning", "Cleaning", "cleaning services"),
-    Category("ac_repair", "AC Repair", "AC repair"),
-    Category("handyman", "Handyman", "handyman services"),
-    Category("plumbing", "Plumbing", "plumber"),
-    Category("electrician", "Electrician", "electrician"),
-    Category("movers", "Movers", "movers and packers"),
-    Category("pest_control", "Pest Control", "pest control"),
-    Category("maid_service", "Maid Service", "maid service"),
-    Category("car_service", "Car Service", "car service and repair"),
-    Category("laundry", "Laundry", "laundry and dry cleaning"),
-    Category("pets_vets", "Vets", "veterinary clinic", category="pets", subcategory="vets"),
+    Category("cleaning", "Cleaning", "cleaning services", refresh_ttl_days=_HOME_FAST_TTL, refresh_per_cell=10),
+    Category("ac_repair", "AC Repair", "AC repair", refresh_ttl_days=_HOME_FAST_TTL, refresh_per_cell=10),
+    Category("handyman", "Handyman", "handyman services", refresh_ttl_days=_HOME_FAST_TTL, refresh_per_cell=10),
+    Category("plumbing", "Plumbing", "plumber", refresh_ttl_days=_HOME_FAST_TTL, refresh_per_cell=10),
+    Category("electrician", "Electrician", "electrician", refresh_ttl_days=_HOME_FAST_TTL, refresh_per_cell=10),
+    Category("movers", "Movers", "movers and packers", refresh_ttl_days=_HOME_SLOW_TTL, refresh_per_cell=10),
+    Category("pest_control", "Pest Control", "pest control", refresh_ttl_days=_HOME_FAST_TTL, refresh_per_cell=10),
+    Category("maid_service", "Maid Service", "maid service", refresh_ttl_days=_HOME_SLOW_TTL, refresh_per_cell=10),
+    Category("car_service", "Car Service", "car service and repair", refresh_ttl_days=_HOME_SLOW_TTL, refresh_per_cell=10),
+    Category("laundry", "Laundry", "laundry and dry cleaning", refresh_ttl_days=_HOME_SLOW_TTL, refresh_per_cell=10),
+    Category(
+        "pets_vets",
+        "Vets",
+        "veterinary clinic",
+        category="pets",
+        subcategory="vets",
+        refresh_ttl_days=_PETS_TTL,
+        refresh_per_cell=8,
+    ),
     Category(
         "pets_emergency_vets",
         "Emergency Vets",
         "24 hour emergency vet",
         category="pets",
         subcategory="emergency_vets",
+        refresh_ttl_days=60,
+        refresh_per_cell=8,
     ),
     Category(
         "pets_boarding_hotels",
@@ -49,6 +70,8 @@ CATEGORIES: list[Category] = [
         "pet boarding and pet hotel",
         category="pets",
         subcategory="boarding_hotels",
+        refresh_ttl_days=_PETS_TTL,
+        refresh_per_cell=8,
     ),
     Category(
         "pets_sitters_walkers",
@@ -56,6 +79,8 @@ CATEGORIES: list[Category] = [
         "pet sitting and dog walking",
         category="pets",
         subcategory="sitters_walkers",
+        refresh_ttl_days=_PETS_TTL,
+        refresh_per_cell=8,
     ),
     Category(
         "pets_grooming",
@@ -63,6 +88,8 @@ CATEGORIES: list[Category] = [
         "pet grooming",
         category="pets",
         subcategory="grooming",
+        refresh_ttl_days=_PETS_TTL,
+        refresh_per_cell=8,
     ),
     Category(
         "pets_shelters_adoption",
@@ -71,6 +98,8 @@ CATEGORIES: list[Category] = [
         category="pets",
         subcategory="shelters_adoption",
         areas=("Dubai",),
+        refresh_ttl_days=90,
+        refresh_per_cell=8,
     ),
     Category(
         "medical_urgent_care",
@@ -78,6 +107,8 @@ CATEGORIES: list[Category] = [
         "urgent care clinic",
         category="medical",
         subcategory="urgent_care",
+        refresh_ttl_days=_MEDICAL_ACCESS_TTL,
+        refresh_per_cell=8,
     ),
     Category(
         "medical_clinics",
@@ -85,6 +116,8 @@ CATEGORIES: list[Category] = [
         "medical clinic",
         category="medical",
         subcategory="clinics",
+        refresh_ttl_days=_MEDICAL_STANDARD_TTL,
+        refresh_per_cell=8,
     ),
     Category(
         "medical_dentists",
@@ -92,6 +125,8 @@ CATEGORIES: list[Category] = [
         "dental clinic",
         category="medical",
         subcategory="dentists",
+        refresh_ttl_days=_MEDICAL_STANDARD_TTL,
+        refresh_per_cell=8,
     ),
     Category(
         "medical_pediatricians",
@@ -99,6 +134,8 @@ CATEGORIES: list[Category] = [
         "pediatric clinic",
         category="medical",
         subcategory="pediatricians",
+        refresh_ttl_days=_MEDICAL_STANDARD_TTL,
+        refresh_per_cell=8,
     ),
     Category(
         "medical_physiotherapy",
@@ -106,6 +143,8 @@ CATEGORIES: list[Category] = [
         "physiotherapy clinic",
         category="medical",
         subcategory="physiotherapy",
+        refresh_ttl_days=_MEDICAL_STANDARD_TTL,
+        refresh_per_cell=8,
     ),
     Category(
         "medical_pharmacies",
@@ -113,6 +152,8 @@ CATEGORIES: list[Category] = [
         "pharmacy",
         category="medical",
         subcategory="pharmacies",
+        refresh_ttl_days=_MEDICAL_ACCESS_TTL,
+        refresh_per_cell=8,
     ),
 ]
 
