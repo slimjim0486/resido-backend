@@ -74,7 +74,7 @@ async def search_events(
     — the anonymous feed — returns the plain newest-scraped list.
 
     - ``query``    keyword ``ilike`` over title/description/venue (no embeddings).
-    - ``category`` exact lifestyle key (dining/events/nightlife/shopping/family/outdoors).
+    - ``category`` exact lifestyle key (dining/events/nightlife/shopping/family/getaways).
     - ``area``     substring match on the Dubai neighbourhood.
     - ``family_friendly=True`` keeps only rows positively flagged kid-friendly
       (unknown/false drop) — never promotes unknowns.

@@ -209,7 +209,7 @@ TOOLS: list[dict] = [
         "name": "find_events",
         "description": (
             "Search Resido's curated, live Dubai lifestyle feed — things to do, dining, nightlife, "
-            "shopping, family days out, and outdoor experiences. Use this for ANY 'what's on / what "
+            "shopping, family days out, and getaways. Use this for ANY 'what's on / what "
             "can we do' request and prefer it over web search for events. Supports budget, day, area, "
             "and kid-friendly filters; returns tappable listings with booking links. Translate the "
             "user's ask into filters (e.g. 'family event under AED 500 on Friday' → family_friendly=true, "
@@ -226,7 +226,7 @@ TOOLS: list[dict] = [
                 },
                 "category": {
                     "type": "string",
-                    "description": "dining | events | nightlife | shopping | family | outdoors",
+                    "description": "dining | events | nightlife | shopping | family | getaways",
                 },
                 "area": {
                     "type": "string",

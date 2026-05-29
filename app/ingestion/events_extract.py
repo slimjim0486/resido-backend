@@ -17,12 +17,14 @@ logger = get_logger(__name__)
 _MAX_INPUT_CHARS = 8000  # matches exa_client text cap
 _MIN_INPUT_CHARS = 400   # too short to plausibly hold events
 
-EXTRACT_SYSTEM = """You extract real, attendable events in or near Dubai, UAE from the text of a \
-web page (often a guide or listicle). Call emit_events with what you find.
+EXTRACT_SYSTEM = """You extract real, bookable or visitable lifestyle listings in or near Dubai, UAE \
+from the text of a web page (often a guide or listicle). Call emit_events with what you find.
 
 Rules:
-- Return ONLY concrete, individual events a person could actually attend — never the page's \
-navigation, ads, newsletter prompts, or the "N things to do" framing itself.
+- Return ONLY concrete, individual events or listings a person could actually attend, book, or visit \
+— never the page's navigation, ads, newsletter prompts, or the "N things to do" framing itself.
+- For CATEGORY getaways, staycations, resort offers, desert retreats, Hatta trips, and short road-trip \
+destinations are valid listings even when they are not single dated events.
 - Resolve relative dates ("this Saturday", "next weekend", "23 May") against the provided TODAY \
 date and output ISO 8601 (YYYY-MM-DD, or full datetime when a time is given). Use null when no \
 date is stated — NEVER guess a date.
@@ -34,9 +36,9 @@ date is stated — NEVER guess a date.
 - family_friendly: true if it's clearly suitable for kids/families (e.g. mentions \
 children, all ages, a theme park, a family day); false if it's clearly adults-only \
 (18+/21+, nightclub, ladies' night, bottomless brunch). Omit if unclear — don't guess.
-- tags: 2-5 short lowercase taste tags capturing cuisine, vibe, or genre — what \
+- tags: 2-5 short lowercase taste tags capturing cuisine, vibe, genre, or trip style — what \
 someone who'd love this would search for (e.g. "brunch", "jazz", "rooftop", \
-"vegetarian-friendly", "live music", "desert", "family day"). Single words or short \
+"vegetarian-friendly", "live music", "desert", "family day", "staycation", "road trip"). Single words or short \
 phrases, lowercase, no '#'. Omit the array if nothing specific stands out — never invent.
 - If the page has no concrete events, return an empty list."""
 

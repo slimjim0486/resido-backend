@@ -31,7 +31,10 @@ CATEGORY_QUERIES: dict[str, str] = {
     "nightlife": "Dubai concerts, live gigs, club nights and comedy shows this month tickets",
     "shopping": "Dubai shopping, malls, markets and deals this week",
     "family": "family and kids activities and days out in Dubai this weekend",
-    "outdoors": "outdoor activities, beaches and desert experiences in Dubai this week",
+    "getaways": (
+        "Dubai staycations, beach resorts, desert retreats, Hatta trips and UAE weekend getaways "
+        "from Dubai with booking details"
+    ),
 }
 
 _WS = re.compile(r"\s+")
@@ -192,6 +195,7 @@ async def ingest_exa_events(
                 extracted = await extract_events(
                     page.get("text") or "", url=page["url"], category=key, today=today, client=client
                 )
+                page_rows = 0
                 for raw in extracted:
                     row = _finalize(raw, page, key)
                     if row is None:
@@ -201,6 +205,11 @@ async def ingest_exa_events(
                         continue
                     seen.add(dk)
                     rows.append(row)
+                    page_rows += 1
+                if key == "getaways" and page_rows == 0:
+                    row = _to_event(page, key, ttl_days=settings.EVENTS_UNDATED_TTL_DAYS)
+                    if row is not None:
+                        rows.append(row)
         else:
             rows = [e for e in (_to_event(r, key) for r in results) if e]
 
