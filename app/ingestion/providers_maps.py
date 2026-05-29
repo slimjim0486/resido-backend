@@ -146,6 +146,9 @@ _POSITIVE_THEMES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Gentle animal handling", ("gentle", "caring", "compassion", "kind", "calm", "handled")),
     ("Clean pet facilities", ("clean facility", "hygien", "clean cages", "well kept")),
     ("Helpful pet updates", ("updates", "photos", "videos", "kept us informed")),
+    ("Helpful clinical communication", ("explained", "doctor explained", "nurse", "reception", "appointment")),
+    ("Easy appointment access", ("appointment", "walk in", "same day", "available", "open 24")),
+    ("Clean medical facility", ("clean clinic", "clean facility", "hygien", "sterile")),
 )
 
 _WATCHOUT_THEMES: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -155,6 +158,8 @@ _WATCHOUT_THEMES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Quality issues mentioned", ("poor", "bad", "damaged", "issue", "problem", "not fixed")),
     ("Animal-care concerns mentioned", ("rough", "neglect", "unclean", "dirty kennel", "stress")),
     ("Upselling concerns in a few reviews", ("upsell", "unnecessary test", "extra charge")),
+    ("Appointment wait concerns", ("long wait", "waiting time", "delayed appointment", "queue")),
+    ("Billing concerns in a few reviews", ("insurance", "billing", "claim", "charged", "expensive")),
 )
 
 
@@ -385,7 +390,12 @@ async def ingest_cell(
     # gives none for these businesses). Mutates rows in place; no-op without a
     # Claude key or when SERVICES_EXTRACT_PRICING is off.
     priced = await providers_pricing.enrich_pricing(
-        [r for r in rows if r.get("subcategory") != "shelters_adoption"]
+        [
+            r
+            for r in rows
+            if r.get("subcategory") != "shelters_adoption"
+            and r.get("category") != "medical"
+        ]
     )
     inserted = await providers_service.upsert_providers(session, rows)
     # Reconcile this cell: providers not seen for ~2 monthly cycles get soft-hidden.

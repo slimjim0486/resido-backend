@@ -72,6 +72,48 @@ CATEGORIES: list[Category] = [
         subcategory="shelters_adoption",
         areas=("Dubai",),
     ),
+    Category(
+        "medical_urgent_care",
+        "Urgent Care",
+        "urgent care clinic",
+        category="medical",
+        subcategory="urgent_care",
+    ),
+    Category(
+        "medical_clinics",
+        "Clinics",
+        "medical clinic",
+        category="medical",
+        subcategory="clinics",
+    ),
+    Category(
+        "medical_dentists",
+        "Dentists",
+        "dental clinic",
+        category="medical",
+        subcategory="dentists",
+    ),
+    Category(
+        "medical_pediatricians",
+        "Pediatricians",
+        "pediatric clinic",
+        category="medical",
+        subcategory="pediatricians",
+    ),
+    Category(
+        "medical_physiotherapy",
+        "Physiotherapy",
+        "physiotherapy clinic",
+        category="medical",
+        subcategory="physiotherapy",
+    ),
+    Category(
+        "medical_pharmacies",
+        "Pharmacies",
+        "pharmacy",
+        category="medical",
+        subcategory="pharmacies",
+    ),
 ]
 
 # ~10 Dubai areas where expats cluster.

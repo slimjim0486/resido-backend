@@ -1,4 +1,4 @@
-"""Draft the WhatsApp quote-request the user sends themselves (Services CTA).
+"""Draft the WhatsApp quote/appointment-request the user sends themselves (Services CTA).
 
 The Services "Get quotes" CTA captures a high-intent lead, but historically the
 provider was never actually contacted — the lead just sat in a table (see
@@ -25,12 +25,13 @@ from app.services import workspace
 logger = get_logger(__name__)
 
 DRAFT_SYSTEM = """You write a short, friendly WhatsApp message that a person in Dubai is about to \
-send to a local service provider to request a quote. Call emit_message with the finished message.
+send to a local provider to request a quote, availability, or appointment. Call emit_message with the finished message.
 
 Rules:
 - Write in the first person — it's a real message the user sends from their own phone.
 - Keep it to 2-4 short sentences: a brief greeting (use the provider's name if given), what they \
-need, and a request for a quote and availability.
+need, and a request for a quote/availability or an appointment, whichever fits the provider category.
+- For medical providers, ask about appointment availability only; do not describe symptoms beyond what the user provided, diagnose, suggest treatment, or ask for a price.
 - Use ONLY the details provided (service, area, timing, budget). NEVER invent specifics — no \
 made-up dates, prices, addresses, or names.
 - Include timing or budget only if they were given; otherwise don't mention them.
@@ -38,7 +39,7 @@ made-up dates, prices, addresses, or names.
 
 EMIT_MESSAGE_TOOL = {
     "name": "emit_message",
-    "description": "Return the WhatsApp message the user will send to request a quote.",
+    "description": "Return the WhatsApp message the user will send to request a quote or appointment.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -80,12 +81,19 @@ def _template_message(
     the AI draft so the CTA behaves identically with or without a Claude key."""
     greeting = f"Hi {provider.name}," if provider.name else "Hi,"
     where = f" in {provider.area}" if provider.area else ""
-    parts = [f"{greeting} I'm looking for help with {need.strip()}{where}."]
+    if provider.category == "medical":
+        parts = [f"{greeting} I'm looking to book an appointment for {need.strip()}{where}."]
+    else:
+        parts = [f"{greeting} I'm looking for help with {need.strip()}{where}."]
     if when_pref and when_pref.strip():
         parts.append(f"Ideally {when_pref.strip()}.")
-    if budget_aed:
+    if budget_aed and provider.category != "medical":
         parts.append(f"My budget is around AED {budget_aed}.")
-    parts.append("Could you share a quote and your availability?")
+    parts.append(
+        "Could you share your availability?"
+        if provider.category == "medical"
+        else "Could you share a quote and your availability?"
+    )
     parts.append(f"Thanks! — {customer_name.strip()}" if customer_name and customer_name.strip() else "Thanks!")
     return " ".join(parts)
 
@@ -144,7 +152,7 @@ async def draft_quote(
     budget_aed: int | None = None,
     customer_name: str | None = None,
 ) -> dict:
-    """Draft a quote-request message for ``provider`` and record the lead.
+    """Draft a quote/appointment-request message for ``provider`` and record the lead.
 
     Returns ``{lead_id, message, channel, to_number}``. ``message`` is AI-written
     when a Claude key is present, else a clean template. ``channel`` is

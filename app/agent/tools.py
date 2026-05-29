@@ -253,17 +253,17 @@ TOOLS: list[dict] = [
     },
     {
         "name": "find_services",
-        "description": "Find ranked local service providers in Dubai (cleaning, AC repair, handyman, plumbing, electrician, movers, pest control, maid service, car service, laundry, pets). Use this when the user needs a home/living/pet service. Returns providers sorted by a trust score (rating weighted by review count), plus review curation when available; filter by area, minimum rating, budget, or pet subcategory. Pet shelters/adoption are included as civic resources and are not ranked by star rating.",
+        "description": "Find ranked local service providers in Dubai (cleaning, AC repair, handyman, plumbing, electrician, movers, pest control, maid service, car service, laundry, pets, medical). Use this when the user needs a home/living/pet/medical access service. Returns providers sorted by a trust score (rating weighted by review count), plus review curation when available; filter by area, minimum rating, budget, or subcategory. Pet shelters/adoption are included as civic resources and are not ranked by star rating. Medical results are access recommendations only, not medical advice.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "category": {
                     "type": "string",
-                    "description": "cleaning | ac_repair | handyman | plumbing | electrician | movers | pest_control | maid_service | car_service | laundry | pets",
+                    "description": "cleaning | ac_repair | handyman | plumbing | electrician | movers | pest_control | maid_service | car_service | laundry | pets | medical",
                 },
                 "subcategory": {
                     "type": "string",
-                    "description": "For pets only: vets | emergency_vets | boarding_hotels | sitters_walkers | grooming | shelters_adoption",
+                    "description": "For pets: vets | emergency_vets | boarding_hotels | sitters_walkers | grooming | shelters_adoption. For medical: urgent_care | clinics | dentists | pediatricians | physiotherapy | pharmacies",
                 },
                 "area": {
                     "type": "string",
@@ -287,7 +287,7 @@ TOOLS: list[dict] = [
         "description": (
             "Capture a high-intent lead with the user's explicit consent. Two modes. "
             "MODE 1 — specific provider: pass the `provider_id` from a find_services result plus a short "
-            "`need` (e.g. 'shower drain cleaning'). This drafts a WhatsApp/SMS message the USER sends "
+            "`need` (e.g. 'shower drain cleaning' or 'book a pediatric appointment'). This drafts a WhatsApp/SMS message the USER sends "
             "themselves and returns the provider's verified contact — it does NOT contact the provider for "
             "them, so never say it was 'sent' or that they'll be called. "
             "MODE 2 — high-value vertical with no specific provider yet (insurance | banking | schooling | "
@@ -689,14 +689,17 @@ async def execute_tool(
                 "count": len(items),
                 "note": "Ranked by trust score (rating weighted by review count). Don't dump the list — "
                 "lead with the single best pick (1-2 max), giving its rating + review count as the trust "
-                "signal and the advertised price when present (say so when it isn't). Use review_curation "
+                "signal and the advertised price when present (say so when it isn't). For medical, do not "
+                "diagnose, give treatment advice, or claim clinical quality; compare access signals like "
+                "area, hours, contactability, specialty label, and rating volume, and advise urgent users to "
+                "call emergency services or the provider directly. Use review_curation "
                 "to explain the choice when present: positives are recurring themes, watchouts are tradeoffs, "
                 "and sample_size says whether actual review text was available. If sample_size is 0, describe "
                 "it as rating-volume evidence, not as review-text analysis. For shelters_adoption, say it is "
                 "not ranked by rating and compare adoption process/contact details instead. Area is a soft boost, not a filter: "
                 "results may sit outside the user's exact area (home services travel) — if so, say the provider "
                 "covers/comes out to their area rather than implying it's local. Then drive to the action: offer "
-                "to draft a quote via create_lead (pass the chosen provider's `id` and a short `need`) with the "
+                "to draft a quote or appointment message via create_lead (pass the chosen provider's `id` and a short `need`) with the "
                 "user's consent — this drafts a message they send themselves; it does NOT contact the provider "
                 "for them. Only quote a provider's phone/website using the values in this result; never invent "
                 "contact details.",
