@@ -1,16 +1,30 @@
-# Railway cron jobs — KB refresh, feeds, and maintenance
+# Railway cron jobs — paused
 
-Scheduled jobs keep the ingestion moat fresh and clean (see `backend/INGESTION.md`):
+Scheduled jobs normally keep the ingestion moat fresh and clean (see `backend/INGESTION.md`),
+but they are intentionally paused while the product direction is being reconsidered.
+Each cron config sets `deploy.cronSchedule` to `null` and uses a no-op `startCommand`,
+so deploying those services cannot accidentally run scrapes, refreshes, deduplication,
+or preference distillation.
 
-| Job | Script | Config file | Default schedule (UTC) | What it does |
-|---|---|---|---|---|
-| **KB refresh** (Tier A) | `scripts/refresh_kb.py` | `railway.refresh-kb.json` | `0 */6 * * *` (every 6h) | Registers the source allowlist, then re-fetches only TTL-elapsed sources. Hash gate skips re-embedding unchanged pages, so most runs are near-free. |
-| **Events feed** (Tier B) | `scripts/seed_events.py` | `railway.seed-events.json` | `0 2 * * *` (06:00 Dubai) | Pulls the lifestyle "What's on" feed. Source precedence: **Apify actor** if `APIFY_EVENTS_ACTOR` set → else **Exa** per-category queries (current default) → else rolling sample set. Existing event images are reused, so recurring runs do not redo Exa image/R2 work for known URLs. |
-| **Services refresh** | `scripts/refresh_services.py` | `railway.refresh-services.json` | `0 3 * * 1` (weekly Monday @ 07:00 Dubai) | Checks for stale `(category/subcategory × area)` cells, then refreshes only the oldest due batch (default cap: 30 cells/run). Category TTLs live in `services_registry.py` so volatile home/medical-access cells refresh sooner than slower pets/medical specialty cells. No-op without `APIFY_TOKEN`. |
-| **Event deduplicator** | `scripts/deduplicate.py --scope events` | `railway.deduplicate.json` | `0 4 * * *` (08:00 Dubai) | Scores live events for cross-source duplicates after the daily feed refresh. Removes only pairs at `DEDUPLICATOR_CONFIDENCE_THRESHOLD` or higher (default `0.90`). |
-| **Provider deduplicator** | `scripts/deduplicate.py --scope providers` | `railway.deduplicate-providers.json` | `0 7 * * 1` (weekly Monday @ 11:00 Dubai) | Scores active providers for cross-source duplicates after the weekly services refresh. Providers are soft-hidden (`is_active=false`) to preserve durable attribution. |
+Railway supports `cronSchedule: null` in config-as-code, and code config overrides
+dashboard service settings for the deployment. The web-service fallback schedulers are
+also disabled by default via `BACKGROUND_JOBS_PAUSED=true`, with
+`EVENTS_FEED_AUTORUN=false` and `DEDUPLICATOR_AUTORUN=false` as secondary per-job gates.
 
-> **Schedules are UTC.** Dubai is UTC+4, so `0 2 * * *` fires at 06:00 Dubai — before users wake. Edit `cronSchedule` in the config file to change it.
+Original scheduled jobs, kept here for when they are intentionally resumed:
+
+| Job | Script | Config file | Paused config | Previous schedule (UTC) | What it does |
+|---|---|---|---|---|---|
+| **KB refresh** (Tier A) | `scripts/refresh_kb.py` | `railway.refresh-kb.json` | `cronSchedule: null` | `0 */6 * * *` (every 6h) | Registers the source allowlist, then re-fetches only TTL-elapsed sources. Hash gate skips re-embedding unchanged pages, so most runs are near-free. |
+| **Events feed** (Tier B) | `scripts/seed_events.py` | `railway.seed-events.json` | `cronSchedule: null` | `0 2 * * *` (06:00 Dubai) | Pulls the lifestyle "What's on" feed. Source precedence: **Apify actor** if `APIFY_EVENTS_ACTOR` set → else **Exa** per-category queries (current default) → else rolling sample set. Existing event images are reused, so recurring runs do not redo Exa image/R2 work for known URLs. |
+| **Services refresh** | `scripts/refresh_services.py` | `railway.refresh-services.json` | `cronSchedule: null` | `0 3 * * 1` (weekly Monday @ 07:00 Dubai) | Checks for stale `(category/subcategory × area)` cells, then refreshes only the oldest due batch (default cap: 30 cells/run). Category TTLs live in `services_registry.py` so volatile home/medical-access cells refresh sooner than slower pets/medical specialty cells. No-op without `APIFY_TOKEN`. |
+| **Event deduplicator** | `scripts/deduplicate.py --scope events` | `railway.deduplicate.json` | `cronSchedule: null` | `0 4 * * *` (08:00 Dubai) | Scores live events for cross-source duplicates after the daily feed refresh. Removes only pairs at `DEDUPLICATOR_CONFIDENCE_THRESHOLD` or higher (default `0.90`). |
+| **Provider deduplicator** | `scripts/deduplicate.py --scope providers` | `railway.deduplicate-providers.json` | `cronSchedule: null` | `0 7 * * 1` (weekly Monday @ 11:00 Dubai) | Scores active providers for cross-source duplicates after the weekly services refresh. Providers are soft-hidden (`is_active=false`) to preserve durable attribution. |
+| **Preference distillation** | `scripts/distill_preferences.py` | `railway.distill-preferences.json` | `cronSchedule: null` | `0 2 * * *` (06:00 Dubai) | Uses Haiku to enrich preference summaries for users with enough taste signals. No-op without `ANTHROPIC_API_KEY`. |
+
+> **Schedules are UTC.** Dubai is UTC+4, so `0 2 * * *` fires at 06:00 Dubai.
+> Restore each job's real `startCommand` and `cronSchedule`, then set
+> `BACKGROUND_JOBS_PAUSED=false` before re-enabling the fallback schedulers.
 
 ## How Railway cron works (the constraints these files satisfy)
 - A cron job is a **separate service** that runs its `startCommand` on the schedule, then **must exit** — both scripts do (`asyncio.run(...)` returns → exit 0).
@@ -90,6 +104,10 @@ railway up --service events-feed
 ---
 
 ## Verify
+- **Settings → Cron Schedule** is empty/disabled for paused services.
+- Deployment logs print `Resido cron paused; ... did not run.` if a paused cron service is deployed manually.
+
+When jobs are intentionally resumed:
 - **Settings → Cron Schedule** shows the expected expression.
 - Trigger a manual run (dashboard **⋯ → Run** / `railway run --service kb-refresh "python -m scripts.refresh_kb --limit 5"`).
 - **Logs** should show:

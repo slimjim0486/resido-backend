@@ -90,11 +90,12 @@ titles of saved events, saved provider names, the `need` text on leads — and a
 `summary` + conservative `inferred` notes via `preferences.apply_distillation`, which
 **preserves `explicit`/`chat`/pinned notes** and replaces only the `inferred` ones.
 
-Runs from `scripts/distill_preferences.py` (`railway.distill-preferences.json`, daily
-02:00): self-limiting via `select_distillation_candidates` (enough signal, not paused,
-new-or-stale, oldest-first, capped). Gated on the Claude key — no key → no-op and the
-rules-templated summary stands. The prompt is deliberately conservative (a pattern, not
-one data point; never invent; omit rather than guess).
+Runs from `scripts/distill_preferences.py` (`railway.distill-preferences.json`) when the
+cron is enabled. It is currently paused with `cronSchedule: null`: self-limiting via
+`select_distillation_candidates` (enough signal, not paused, new-or-stale, oldest-first,
+capped). Gated on the Claude key — no key → no-op and the rules-templated summary
+stands. The prompt is deliberately conservative (a pattern, not one data point; never
+invent; omit rather than guess).
 
 ### Layer 3 — Explicit memory (notes) — **built**
 
@@ -151,8 +152,8 @@ models/preference.py            PreferenceSignal, PreferenceProfile
 alembic/versions/0012_*.py      both tables
 services/preferences.py         capture · recompute · scoring · ranking · notes/controls · distill write+select
 services/preferences_distill.py Haiku distillation (gather history → emit summary+notes)
-scripts/distill_preferences.py  daily cron entrypoint (self-limiting)
-railway.distill-preferences.json  daily 02:00 cron service
+scripts/distill_preferences.py  cron entrypoint (self-limiting)
+railway.distill-preferences.json  paused cron service
 services/workspace.py           capture hooks in favorite/lead mutations
 services/events.py              search_events(personalize=…)
 services/providers.py           list_providers(personalize=…)
@@ -178,8 +179,8 @@ weights · `_PROVIDER_BOOST` (0.12) · `_MIN_WEIGHT` (0.05, map noise floor).
 - **Phase 2 — explicit memory + control API (done):** `remember_preference` agent tool and
   the `/me/preferences` endpoints (read / add / edit / delete notes, pause, reset). Deterministic,
   no AI cost.
-- **Phase 2 — Haiku distillation (done):** `preferences_distill.py` +
-  `scripts/distill_preferences.py` + `railway.distill-preferences.json` (daily) write a
+- **Phase 2 — Haiku distillation (done, cron paused):** `preferences_distill.py` +
+  `scripts/distill_preferences.py` + `railway.distill-preferences.json` write a
   richer `summary` + nuanced `inferred` notes; degrades to the templated summary with no key.
 - **Phase 2 — remaining:** the Flutter "What Resido knows about you" screen on top of the
   `/me/preferences` API (summary + chips + editable notes + pause/reset).

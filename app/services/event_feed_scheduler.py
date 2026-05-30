@@ -100,6 +100,9 @@ async def _run_loop() -> None:
 
 
 def start_event_feed_scheduler() -> asyncio.Task | None:
+    if settings.BACKGROUND_JOBS_PAUSED:
+        logger.info("events_feed_refresh_paused")
+        return None
     if not settings.EVENTS_FEED_AUTORUN:
         logger.info("events_feed_refresh_disabled")
         return None

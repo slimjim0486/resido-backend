@@ -82,10 +82,12 @@ class Settings(BaseSettings):
     # Physical cleanup keeps a short audit/debug window after events disappear
     # from the app via expires_at.
     EVENTS_EXPIRED_RETENTION_DAYS: int = 30
-    # Reliability fallback for the "What's On" feed. Railway cron should run
-    # scripts/seed_events.py daily, but the web service can also run it if the
-    # cron service is missing or delayed.
-    EVENTS_FEED_AUTORUN: bool = True
+    # Global kill switch for scheduled/background maintenance while product
+    # offerings are paused. Set false only when deliberately resuming jobs.
+    BACKGROUND_JOBS_PAUSED: bool = True
+    # Reliability fallback for the "What's On" feed. Keep disabled while the
+    # Railway cron services are paused so the web service does not refresh feeds.
+    EVENTS_FEED_AUTORUN: bool = False
     EVENTS_FEED_RUN_HOUR_DUBAI: int = 6
     EVENTS_FEED_STALE_AFTER_HOURS: int = 20
     # Off-the-shelf Apify Google Maps actor that powers the Services vertical
@@ -120,10 +122,9 @@ class Settings(BaseSettings):
     # Daily cleanup removes only high-confidence cross-source duplicates. Events
     # are deleted; providers are soft-hidden to preserve durable attribution.
     DEDUPLICATOR_CONFIDENCE_THRESHOLD: float = 0.90
-    # Reliability fallback for content dedupe. Railway cron should run
-    # scripts/deduplicate.py daily, but the web service can also run it if the
-    # cron service is missing. Startup run catches missed jobs after deploy.
-    DEDUPLICATOR_AUTORUN: bool = True
+    # Reliability fallback for content dedupe. Keep disabled while the Railway
+    # cron services are paused so startup/daily dedupe jobs do not run.
+    DEDUPLICATOR_AUTORUN: bool = False
     DEDUPLICATOR_RUN_HOUR_DUBAI: int = 8
     # Providers only change after service refreshes, so the fallback dedupes
     # events daily and providers on Monday (Python weekday: Monday=0).

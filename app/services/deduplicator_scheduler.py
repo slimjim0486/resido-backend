@@ -91,6 +91,9 @@ async def _run_loop() -> None:
 
 
 def start_deduplicator_scheduler() -> asyncio.Task | None:
+    if settings.BACKGROUND_JOBS_PAUSED:
+        logger.info("deduplicator_paused")
+        return None
     if not settings.DEDUPLICATOR_AUTORUN:
         logger.info("deduplicator_disabled")
         return None
